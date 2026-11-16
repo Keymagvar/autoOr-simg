@@ -1,0 +1,99 @@
+name: Release
+
+# Builds the distributables for all three desktop platforms, per
+# DESIGN.md §13. Linux gets two: the plain tarball+install.sh and a
+# portable AppImage (packaging/linux/build_appimage.sh) — no install step,
+# carries its own icon, same "just run it" philosophy as the Windows exe
+# and macOS .app. Linux and Windows cross-compile fine from a plain
+# ubuntu-latest runner (confirmed: cgofuse needs cgo on Linux, which
+# ubuntu-latest's default toolchain already provides, and needs NO cgo at
+# all on Windows — see packaging/windows/build.sh's own comment). macOS is the one platform that
+# genuinely needs its own native runner: cgofuse requires real cgo there
+# too, and there is no osxcross cross-compile toolchain in this repo or
+# this workflow, so macos-latest is used specifically to get a real
+# clang/SDK instead of trying to cross-compile one in.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+# Needed for the release job's softprops/action-gh-release step to actually
+# create the GitHub Release and attach files — the default GITHUB_TOKEN is
+# read-only unless a repo's own Settings > Actions > General > Workflow
+# permissions is set to "Read and write", which isn't guaranteed across
+# accounts/orgs. Declaring it here means this works regardless of that
+# setting, instead of silently 403ing on the first real release.
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install -y libayatana-appindicator3-dev
+      - name: Build
+        run: VERSION="${{ github.ref_name }}" bash packaging/linux/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autoOr-simg-linux-amd64
+          path: dist/autoOr-simg-linux-amd64.tar.gz
+      - name: Build AppImage (portable, no install step)
+        run: VERSION="${{ github.ref_name }}" bash packaging/linux/build_appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autoOr-simg-linux-x86_64-appimage
+          path: dist/autoOr-simg-x86_64.AppImage
+
+  build-windows:
+    # Deliberately ubuntu-latest, not windows-latest: the current build is
+    # a CGO_ENABLED=0 cross-compile from Linux (proven to work end-to-end,
+    # including under Wine, this session), not a native build. Move this
+    # to windows-latest once the accelerated cgo codec path gets a real
+    # Windows libjpeg-turbo lib vendored (DESIGN.md §13) and needs an
+    # actual mingw-w64/MSVC toolchain.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: VERSION="${{ github.ref_name }}" bash packaging/windows/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autoOr-simg-windows-amd64
+          path: dist/autoOr-simg-windows-amd64.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: VERSION="${{ github.ref_name }}" bash packaging/macos/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autoOr-simg-macos-arm64
+          path: dist/autoOr-simg-macos-*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          prerelease: true

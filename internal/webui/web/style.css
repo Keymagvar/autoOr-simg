@@ -1,0 +1,491 @@
+:root {
+  color-scheme: dark;
+  --bg: #121212;
+  --panel: #1c1c1c;
+  --border: #333;
+  --text: #e8e8e8;
+  --muted: #999;
+  --accent: #d98c2b;
+  --accent-contrast: #1a1206;
+  --danger: #c0392b;
+  --ok: #4caf50;
+  --bad: #c0392b;
+  --warn: #d9a62b;
+  --warn-contrast: #1a1206;
+  --input-bg: #0f0f0f;
+  --btn-bg: #2a2a2a;
+  --log-bg: #0a0a0a;
+  --error-text: #ff8a80;
+  --error-bg-weak: rgba(255, 138, 128, 0.12);
+  --code-color: #c9a06a;
+  --overlay-bg: rgba(0, 0, 0, 0.6);
+}
+
+/* Light theme — applied by the header's Light/Dark buttons (app.js's
+   setTheme), which set data-theme on <html>. Defaults above stay dark-
+   first since that was this page's original design; this block is the
+   complete light palette, not just a couple of overrides. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f2ee;
+  --panel: #ffffff;
+  --border: #ddd6cc;
+  --text: #1c1a16;
+  --muted: #6b6558;
+  --accent: #a85d0f;
+  --accent-contrast: #fff6ea;
+  --danger: #b0291a;
+  --ok: #2e7d32;
+  --bad: #b0291a;
+  --warn: #a85d0f;
+  --warn-contrast: #fff6ea;
+  --input-bg: #faf8f4;
+  --btn-bg: #ece7dd;
+  --log-bg: #f0ede6;
+  --error-text: #b0291a;
+  --error-bg-weak: rgba(176, 41, 26, 0.10);
+  --code-color: #8a5a20;
+  --overlay-bg: rgba(60, 50, 30, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 { font-size: 18px; margin: 0; color: var(--accent); }
+
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-logo { height: 32px; width: auto; display: block; }
+
+#attribution-banner {
+  padding: 6px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+#attribution-banner a { color: var(--accent); }
+
+.header-right { display: flex; align-items: center; gap: 18px; }
+
+.lang-switch { display: flex; gap: 4px; }
+.lang-btn {
+  padding: 3px 6px;
+  font-size: 16px;
+  line-height: 1;
+}
+.lang-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.theme-switch { display: flex; gap: 4px; }
+.theme-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.theme-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.run-control { display: flex; align-items: center; gap: 10px; }
+
+.dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--bad);
+  display: inline-block;
+}
+.dot.on { background: var(--ok); }
+
+button {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.danger { border-color: var(--danger); color: var(--error-text); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+/* #btn-save's own dirty/clean indicator — see app.js's markSaveDirty.
+   Clean (nothing to save) reads as the same "all good" green as the
+   running-status dot; dirty (unsaved changes) reads as a clear "you need
+   to act" yellow, not the destructive red already used for danger buttons. */
+#btn-save.save-clean { background: var(--ok); color: #fff; border-color: var(--ok); }
+#btn-save.save-dirty { background: var(--warn); color: var(--warn-contrast); border-color: var(--warn); font-weight: 600; }
+
+/* 3 columns (Setup / Zoom & quality / Stats+Scenery stacked), Log full
+   width below — sim rigs and VR users routinely run this on large or
+   ultrawide displays, so use the horizontal space instead of capping the
+   page at a fixed max-width with wide idle margins on either side. */
+main {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: start;
+  gap: 16px;
+  padding: 16px 2vw;
+}
+
+.block {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+.block h2 { margin-top: 0; font-size: 15px; color: var(--accent); }
+
+.col-stack { display: flex; flex-direction: column; gap: 16px; }
+
+#block-log { grid-column: 1 / -1; }
+
+label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+label input, label select {
+  display: block;
+  margin-top: 4px;
+  width: 100%;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+label.checkbox { display: flex; align-items: center; gap: 8px; }
+label.checkbox input { width: auto; display: inline; }
+
+.row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.hint { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.4; }
+.hint code { color: var(--code-color); font-size: 11px; }
+
+.maxzoom-warning { color: var(--danger); }
+.maxzoom-warning.hidden { display: none; }
+
+.path-row { display: flex; gap: 6px; align-items: center; }
+.path-row input { flex: 1; margin-top: 0; }
+.browse-btn, #btn-detect-xplane { flex-shrink: 0; white-space: nowrap; }
+.detect-status { color: var(--accent); }
+
+.settings-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.settings-header h2 { margin: 0; font-size: 16px; color: var(--accent); }
+.settings-section { margin-top: 18px; }
+.settings-section:first-of-type { margin-top: 0; }
+.settings-section h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.settings-section .hint { margin-bottom: 8px; }
+#bg-file-input.hidden { display: none; }
+.setup-path-field input:read-only { font-style: italic; opacity: 0.8; }
+
+.guide-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  width: 560px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.guide-panel { font-size: 13px; line-height: 1.6; color: var(--text); }
+.guide-panel h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 18px 0 6px;
+}
+.guide-panel h3:first-child { margin-top: 0; }
+.guide-panel ol, .guide-panel ul { margin: 6px 0; padding-left: 20px; }
+.guide-panel li { margin-bottom: 6px; }
+.guide-panel code {
+  color: var(--code-color);
+  background: var(--input-bg);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+.guide-panel pre {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.guide-panel pre code { background: none; padding: 0; }
+
+.bg-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bg-opacity-row.hidden { display: none; }
+.bg-opacity-row input[type="range"] {
+  flex: 1;
+  margin-top: 0;
+  width: auto;
+  accent-color: var(--accent);
+}
+#bg-opacity-value { min-width: 2.5em; text-align: right; }
+
+/* Fixed, low-opacity wallpaper behind everything — inserted first in
+   <body> so it paints over body's own solid --bg fill but under every
+   later element, all of which (header, .block panels, the attribution
+   banner) have their own solid backgrounds and so stay fully legible on
+   top of it regardless of what the photo looks like. */
+#bg-overlay-layer {
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.03;
+  pointer-events: none;
+}
+#bg-overlay-layer.hidden { display: none; }
+
+.dirbrowser-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  width: 520px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.dirbrowser-header { display: flex; gap: 8px; margin-bottom: 10px; }
+.dirbrowser-header input {
+  flex: 1;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.dirbrowser-error {
+  color: var(--error-text);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.dirbrowser-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.dirbrowser-list li {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.dirbrowser-list li:last-child { border-bottom: none; }
+.dirbrowser-list li:hover { background: var(--btn-bg); color: var(--accent); }
+
+.stat-row {
+  display: flex; justify-content: space-between;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.stat-row:last-child { border-bottom: none; }
+
+#regions .region-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+#regions .region-row:last-child { border-bottom: none; }
+#regions .region-row.region-row-error { background: var(--error-bg-weak); }
+#regions .region-name { flex: 1; }
+#regions .region-mount-dot { margin-right: 6px; }
+#regions .region-meta { color: var(--muted); font-size: 12px; }
+#regions .region-meta.error { color: var(--error-text); font-weight: 600; }
+
+#regions .region-progress {
+  flex-basis: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--btn-bg);
+  overflow: hidden;
+}
+#regions .region-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+#regions .region-progress-fill.indeterminate {
+  width: 35%;
+  animation: region-progress-indeterminate 1.1s ease-in-out infinite;
+}
+@keyframes region-progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(285%); }
+}
+
+#log {
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.overlay {
+  position: fixed; inset: 0;
+  background: var(--overlay-bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.overlay.hidden { display: none; }
+.confirm-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  max-width: 360px;
+}
+.confirm-box button { margin-right: 8px; margin-top: 12px; }
+
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr 1fr; }
+  .col-stack { grid-column: 1 / -1; flex-direction: row; }
+  .col-stack > .block { flex: 1; }
+}
+
+@media (max-width: 700px) {
+  main { grid-template-columns: 1fr; }
+  .col-stack { flex-direction: column; }
+}
+
+/* Mascot — fixed in the corner, click-through (pointer-events: none) so it
+   never steals clicks meant for the page underneath it. Built from 4
+   aligned PNG layers (same canvas size/origin, exported together from
+   Krita) stacked in DOM order: sclera behind, both pupils above it, the
+   body art (with transparent eye holes) on top framing everything. The
+   eye-tracking JS only ever moves the two .mascot-pupil layers.
+   #mascot-clickzone (the top/body layer) opts back into pointer events —
+   it's the click target for the speech bubble — trading a small amount of
+   click-through at the mascot's own corner for that interaction. */
+#mascot {
+  position: fixed;
+  right: 18px;
+  bottom: 0;
+  width: 120px;
+  aspect-ratio: 930 / 1408;
+  z-index: 500;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+}
+#mascot.hidden { display: none; }
+.mascot-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#mascot-clickzone {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.mascot-bubble {
+  position: absolute;
+  bottom: 100%;
+  right: 10%;
+  margin-bottom: 10px;
+  max-width: 170px;
+  width: max-content;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.mascot-bubble.hidden { display: none; }
+.mascot-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  border: 6px solid transparent;
+  border-top-color: var(--panel);
+}

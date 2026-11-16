@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>autoOr-simg</title>
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="bg-overlay-layer"></div>
+
+<header>
+  <div class="brand">
+    <img src="logo.png" alt="" class="brand-logo">
+    <h1>autoOr-simg</h1>
+  </div>
+  <div class="header-right">
+    <button id="btn-user-guide" class="icon-btn" type="button" title="Usage Guide" data-i18n-title="guide.tooltip">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm.1 15.3a1.3 1.3 0 1 1 1.3-1.3 1.3 1.3 0 0 1-1.3 1.3Zm1.34-5.27c-.73.5-.94.84-.94 1.47h-1.9v-.2c0-1 .34-1.63 1.2-2.22.7-.48.98-.78.98-1.3 0-.6-.5-1-1.25-1-.72 0-1.22.37-1.3 1.1H8.3C8.4 8.1 9.6 7 11.6 7c2 0 3.3 1.05 3.3 2.65 0 1.05-.48 1.68-1.46 2.38Z"/>
+      </svg>
+    </button>
+    <button id="btn-settings" class="icon-btn" type="button" title="Settings" data-i18n-title="settings.tooltip">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+        <path d="M19.4 13a7.6 7.6 0 0 0 .06-1 7.6 7.6 0 0 0-.06-1l1.86-1.45a.5.5 0 0 0 .12-.64l-1.76-3.05a.5.5 0 0 0-.6-.22l-2.2.88a7.4 7.4 0 0 0-1.73-1l-.33-2.34a.5.5 0 0 0-.5-.43h-3.52a.5.5 0 0 0-.5.43l-.33 2.34a7.4 7.4 0 0 0-1.73 1l-2.2-.88a.5.5 0 0 0-.6.22L3.62 8.9a.5.5 0 0 0 .12.64L5.6 11a7.6 7.6 0 0 0 0 2l-1.86 1.45a.5.5 0 0 0-.12.64l1.76 3.05a.5.5 0 0 0 .6.22l2.2-.88a7.4 7.4 0 0 0 1.73 1l.33 2.34a.5.5 0 0 0 .5.43h3.52a.5.5 0 0 0 .5-.43l.33-2.34a7.4 7.4 0 0 0 1.73-1l2.2.88a.5.5 0 0 0 .6-.22l1.76-3.05a.5.5 0 0 0-.12-.64Zm-7.4 2.5A3.5 3.5 0 1 1 15.5 12a3.5 3.5 0 0 1-3.5 3.5Z"/>
+      </svg>
+    </button>
+    <div class="run-control">
+      <span id="status-dot" class="dot"></span>
+      <span id="status-text" data-i18n="status.connecting">connecting…</span>
+      <button id="btn-save" title="It saves all configurations" data-i18n-title="setup.save_tooltip" data-i18n="setup.save">Save</button>
+      <span id="save-status" class="hint"></span>
+      <button id="btn-run" data-i18n="btn.run">Run</button>
+      <button id="btn-stop" data-i18n="btn.stop">Stop</button>
+      <button id="btn-restart" data-i18n="btn.restart">Restart</button>
+      <button id="btn-shutdown" class="danger" data-i18n="btn.shutdown">Shutdown</button>
+    </div>
+  </div>
+</header>
+
+<div id="attribution-banner">
+  <span data-i18n-html="attribution.text">autoOr-simg is an unofficial Go reimplementation of <a href="https://github.com/kubilus1/autoortho" target="_blank" rel="noopener">kubilus1's AutoOrtho</a> — our thanks to the original project and its author.</span>
+</div>
+
+<main>
+  <section class="block" id="block-setup">
+    <h2 data-i18n="setup.heading">Setup</h2>
+    <label class="setup-path-field">
+      <span data-i18n="setup.xplane_label">X-Plane install dir</span>
+      <div class="path-row">
+        <input id="cfg-xplane_path" type="text">
+        <button type="button" id="btn-detect-xplane" data-i18n="setup.detect_xplane">Find X-Plane…</button>
+        <button type="button" class="browse-btn" data-target="cfg-xplane_path" data-i18n="setup.browse">Browse…</button>
+      </div>
+      <span id="detect-xplane-status" class="hint detect-status hidden"></span>
+      <span class="hint" data-i18n-html="setup.xplane_hint">The X-Plane root folder itself — the one that directly contains <code>Custom Scenery</code>, not that folder. Example: <code>.../Steam/steamapps/common/X-Plane 12</code>.</span>
+    </label>
+    <label class="setup-path-field">
+      <span data-i18n="setup.scenery_label">Scenery install dir</span>
+      <div class="path-row">
+        <input id="cfg-scenery_path" type="text">
+        <button type="button" class="browse-btn" data-target="cfg-scenery_path" data-i18n="setup.browse">Browse…</button>
+      </div>
+      <span class="hint" data-i18n-html="setup.scenery_hint">A dedicated folder for autoOr-simg's own packages — commonly <code>&lt;X-Plane path&gt;/Custom Scenery/z_autoortho</code>. autoOr-simg installs/uninstalls everything under this folder, so give it one of its own rather than reusing a folder with other content.</span>
+    </label>
+    <label class="setup-path-field">
+      <span data-i18n="setup.cache_label">Image cache dir</span>
+      <div class="path-row">
+        <input id="cfg-cache_dir" type="text">
+        <button type="button" class="browse-btn" data-target="cfg-cache_dir" data-i18n="setup.browse">Browse…</button>
+      </div>
+      <span class="hint" data-i18n-html="setup.cache_hint">Decoded/compressed tile cache, read on every texture request — pick a fast local drive (SSD) with room to grow toward the cache size limit below. Default: <code>~/.autoortho-data/cache</code>.</span>
+    </label>
+    <label class="setup-path-field">
+      <span data-i18n="setup.download_label">Temp download dir</span>
+      <div class="path-row">
+        <input id="cfg-download_dir" type="text">
+        <button type="button" class="browse-btn" data-target="cfg-download_dir" data-i18n="setup.browse">Browse…</button>
+      </div>
+      <span class="hint" data-i18n-html="setup.download_hint">Scratch space for in-progress scenery downloads — needs roughly 2x the download size free temporarily (checked before each install starts). Default: <code>~/.autoortho-data/downloads</code>.</span>
+    </label>
+    <label>
+      <span data-i18n="setup.cache_size_label">Cache size (GB)</span>
+      <input id="cfg-file_cache_size_gb" type="number" min="10" step="5">
+      <button id="btn-clean-cache" data-i18n="setup.clean_cache">Clean Cache</button>
+    </label>
+    <label class="checkbox">
+      <input id="cfg-auto_open_ui" type="checkbox">
+      <span data-i18n="setup.auto_open_label">Open browser automatically on startup</span>
+    </label>
+  </section>
+
+  <section class="block" id="block-zoom">
+    <h2 data-i18n="zoom.heading">Zoom &amp; quality</h2>
+    <label>
+      <span data-i18n="zoom.maptype_label">Map type override</span>
+      <select id="cfg-maptype_override"></select>
+    </label>
+    <label>
+      <span data-i18n="zoom.minzoom_label">Min zoom</span>
+      <span class="hint" data-i18n="zoom.minzoom_hint">(floor, not a ceiling — never raises quality above what the provider serves)</span>
+      <select id="cfg-min_zoom"></select>
+    </label>
+    <label>
+      <span data-i18n="zoom.maxzoom_label">Max zoom</span>
+      <span class="hint" data-i18n="zoom.maxzoom_hint">(ceiling — caps the sharpest imagery ever fetched, to save disk space and bandwidth; "No cap" leaves this limit disabled)</span>
+      <select id="cfg-max_zoom"></select>
+      <span id="maxzoom-warning" class="hint maxzoom-warning hidden" data-i18n="zoom.maxzoom_warning">⚠ Below 18, dense areas (cities, airports) will look noticeably blocky — this caps them far harder than open countryside at the same setting.</span>
+    </label>
+    <label>
+      <span data-i18n="zoom.perfmode_label">Performance mode</span>
+      <span class="hint" data-i18n="zoom.perfmode_hint">(how early to trade sharpness for speed when many tiles want full detail at once — e.g. a dense city or a wide view; takes effect immediately)</span>
+      <select id="cfg-performance_mode">
+        <option value="quality" data-i18n="zoom.perfmode_quality">Quality</option>
+        <option value="balanced" data-i18n="zoom.perfmode_balanced">Balanced</option>
+        <option value="speed" data-i18n="zoom.perfmode_speed">Speed</option>
+      </select>
+    </label>
+    <label class="checkbox">
+      <input id="cfg-disable_coarse_fallback" type="checkbox">
+      <span data-i18n="zoom.coarsefallback_label">Disable blurry fallback for slow/missing tiles</span>
+      <span class="hint" data-i18n="zoom.coarsefallback_hint">(when off, a slow or failed chunk is shown as a blurry stand-in from a coarser cached zoom level instead of a flat color patch — looks like soft-focus over land, can look washed-out/dirty over water; takes effect immediately)</span>
+    </label>
+    <label>
+      <span data-i18n="zoom.maxwait_label">Max wait (seconds per chunk fetch)</span>
+      <input id="cfg-maxwait" type="number" min="0" step="0.1">
+    </label>
+    <label>
+      <span data-i18n="zoom.maxbuilds_label">Max concurrent tile builds</span>
+      <span class="hint" data-i18n="zoom.maxbuilds_hint">(memory budget, not network — takes effect on next restart)</span>
+      <input id="cfg-max_concurrent_builds" type="number" min="1">
+    </label>
+    <label>
+      <span data-i18n="zoom.fetchthreads_label">Chunk fetch threads</span>
+      <span class="hint" data-i18n="zoom.fetchthreads_hint">(one shared pool every tile's chunk fetches compete through fairly, process-wide; takes effect on next restart)</span>
+      <input id="cfg-fetch_threads" type="number" min="1">
+    </label>
+    <label>
+      <span data-i18n="zoom.maxopentiles_label">Max open tiles</span>
+      <span class="hint" data-i18n="zoom.maxopentiles_hint">(memory budget — tiles opened past this serve a cheap placeholder instead of a full build)</span>
+      <input id="cfg-max_open_tiles" type="number" min="1">
+    </label>
+  </section>
+
+  <div class="col-stack">
+    <section class="block" id="block-stats">
+      <h2 data-i18n="stats.heading">Stats</h2>
+      <div class="stat-row"><span data-i18n="stats.cached_tiles">Cached tiles</span><span id="stat-cached_tiles">-</span></div>
+      <div class="stat-row"><span data-i18n="stats.open_tiles">Open tiles</span><span id="stat-open_tiles">-</span></div>
+      <div class="stat-row"><span data-i18n="stats.process_memory">Process memory</span><span id="stat-rss">-</span></div>
+      <div class="stat-row"><span data-i18n="stats.active_mounts">Active mounts</span><span id="stat-mounts">-</span></div>
+    </section>
+
+    <section class="block" id="block-scenery">
+      <h2 data-i18n="scenery.heading">Scenery</h2>
+      <button id="btn-refresh-regions" data-i18n="scenery.refresh">Refresh</button>
+      <div id="regions"></div>
+    </section>
+  </div>
+
+  <section class="block" id="block-log">
+    <h2 data-i18n="log.heading">Log</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+<div id="confirm-overlay" class="overlay hidden">
+  <div class="confirm-box">
+    <p id="confirm-text"></p>
+    <button id="confirm-yes" class="danger" data-i18n="confirm.yes">Yes</button>
+    <button id="confirm-no" data-i18n="confirm.cancel">Cancel</button>
+  </div>
+</div>
+
+<div id="dirbrowser-overlay" class="overlay hidden">
+  <div class="dirbrowser-box">
+    <div class="dirbrowser-header">
+      <button id="dirbrowser-up" data-i18n="dirbrowser.up">&uarr; Up</button>
+      <input id="dirbrowser-path" type="text" readonly>
+    </div>
+    <div id="dirbrowser-error" class="dirbrowser-error hidden"></div>
+    <ul id="dirbrowser-list" class="dirbrowser-list"></ul>
+    <div class="row">
+      <button id="dirbrowser-select" data-i18n="dirbrowser.select">Select this folder</button>
+      <button id="dirbrowser-cancel" data-i18n="dirbrowser.cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="settings-overlay" class="overlay hidden">
+  <div class="settings-box">
+    <div class="settings-header">
+      <h2 data-i18n="settings.heading">Settings</h2>
+      <button id="settings-close" class="icon-btn" type="button" title="Close" data-i18n-title="settings.close">&times;</button>
+    </div>
+
+    <div class="settings-section">
+      <h3 data-i18n="settings.language_label">Language</h3>
+      <div class="lang-switch">
+        <button class="lang-btn" data-lang="en" title="English">🇺🇸</button>
+        <button class="lang-btn" data-lang="es" title="Español">🇨🇴</button>
+        <button class="lang-btn" data-lang="ru" title="Русский">🇷🇺</button>
+        <button class="lang-btn" data-lang="pt" title="Português (Brasil)">🇧🇷</button>
+        <button class="lang-btn" data-lang="el" title="Ελληνικά">🇬🇷</button>
+        <button class="lang-btn" data-lang="ar" title="العربية">🇸🇦</button>
+        <button class="lang-btn" data-lang="zh" title="中文">🇨🇳</button>
+        <button class="lang-btn" data-lang="fr" title="Français">🇫🇷</button>
+        <button class="lang-btn" data-lang="it" title="Italiano">🇮🇹</button>
+        <button class="lang-btn" data-lang="de" title="Deutsch">🇩🇪</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3 data-i18n="settings.theme_label">Theme</h3>
+      <div class="theme-switch">
+        <button class="theme-btn" data-theme="light" data-i18n="theme.light">Light</button>
+        <button class="theme-btn" data-theme="dark" data-i18n="theme.dark">Dark</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3 data-i18n="settings.demo_mode_label">Demonstration mode</h3>
+      <span class="hint" data-i18n="settings.demo_mode_hint">Redacts your username in the X-Plane/scenery/cache/download path fields and in the Log block — for screenshots and screen recordings. Only changes what's displayed, not the real saved values. Only affects this browser tab, not saved config.</span>
+      <label class="checkbox">
+        <input id="demo-mode-toggle" type="checkbox">
+        <span data-i18n="settings.demo_mode_enable">Enable demonstration mode</span>
+      </label>
+    </div>
+
+    <div class="settings-section">
+      <h3 data-i18n="settings.background_label">Background</h3>
+      <span class="hint" data-i18n="settings.background_hint">Pick a photo to show faintly behind the page — panels stay solid, so everything stays readable.</span>
+      <input id="bg-file-input" type="file" accept="image/*" class="hidden">
+      <div class="row">
+        <button id="btn-choose-bg" type="button" data-i18n="settings.choose_background">Choose image…</button>
+        <button id="btn-remove-bg" type="button" data-i18n="settings.remove_background">Remove background</button>
+      </div>
+      <div id="bg-opacity-row" class="bg-opacity-row hidden">
+        <label for="bg-opacity-slider" data-i18n="settings.opacity_label">Opacity</label>
+        <input id="bg-opacity-slider" type="range" min="1" max="5" step="1">
+        <span id="bg-opacity-value">3%</span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3 data-i18n="settings.mascot_label">Natalia</h3>
+      <span class="hint" data-i18n="settings.mascot_hint">A little lady in the corner who watches your cursor. Click her for a tip.</span>
+      <label>
+        <span data-i18n="settings.mascot_outfit">Outfit</span>
+        <select id="sel-mascot-outfit"></select>
+      </label>
+    </div>
+  </div>
+</div>
+
+<div id="user-guide-overlay" class="overlay hidden">
+  <div class="guide-box">
+    <div class="settings-header">
+      <h2 data-i18n="guide.title">Usage Guide</h2>
+      <button id="guide-close" class="icon-btn" type="button" title="Close" data-i18n-title="settings.close">&times;</button>
+    </div>
+
+    <div class="guide-panel" data-i18n-html="guide.content"></div>
+  </div>
+</div>
+
+<div id="mascot" aria-hidden="true">
+  <div id="mascot-bubble" class="mascot-bubble hidden"><span id="mascot-bubble-text"></span></div>
+  <img class="mascot-layer" src="mascot/sclera.png" alt="">
+  <img class="mascot-layer mascot-pupil" id="mascot-pupil-left" src="mascot/left_eye.png" alt="">
+  <img class="mascot-layer mascot-pupil" id="mascot-pupil-right" src="mascot/right_eye.png" alt="">
+  <img class="mascot-layer" id="mascot-clickzone" src="mascot/mascot_body.png" alt="">
+</div>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

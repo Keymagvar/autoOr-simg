@@ -1,0 +1,257 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install -y libfuse3-dev libayatana-appindicator3-dev
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Build the AppImage via the real release packaging script
+        # Same reasoning as the Windows/macOS jobs below: runs the actual
+        # packaging/linux/build_appimage.sh, not a hand-rolled
+        # re-implementation, so a broken AppDir/AppRun/icon change is
+        # caught here on every push instead of only at release time.
+        run: VERSION=test-ci bash packaging/linux/build_appimage.sh
+      - name: Run the AppImage for real and verify the web UI + mount come up
+        run: |
+          APPIMAGE="dist/autoOr-simg-x86_64.AppImage"
+          test -x "$APPIMAGE" || { echo "packaging script didn't produce $APPIMAGE"; exit 1; }
+
+          # Isolated $HOME so this doesn't touch anything real, and so the
+          # fake X-Plane/scenery layout below is the only thing config.Load
+          # can find — same trick the Windows/macOS jobs use via a fresh
+          # user profile.
+          export HOME="$RUNNER_TEMP/appimage_home"
+          mkdir -p "$HOME/xplane/Custom Scenery"
+          mkdir -p "$HOME/scenery/z_autoortho/scenery/z_ao_test"
+          cat > "$HOME/.autoortho" <<EOF
+          [general]
+          gui = false
+          showconfig = false
+          debug = false
+          auto_open_ui = false
+          enable_tray = false
+
+          [paths]
+          xplane_path = $HOME/xplane
+          scenery_path = $HOME/scenery
+          EOF
+
+          # --appimage-extract-and-run: most CI runners (and a growing
+          # number of real desktops, now that FUSE2 is disappearing from
+          # distros) don't have the FUSE2 AppImages normally self-mount
+          # with. This extracts first and runs directly instead, which is
+          # also exactly the documented fallback for a user on a system
+          # without FUSE2 — so this is testing a real, supported path, not
+          # a CI-only workaround.
+          "./$APPIMAGE" --appimage-extract-and-run run -H > out.log 2> err.log &
+          pid=$!
+          ok=false
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -fsS -o /dev/null "http://127.0.0.1:5000/"; then ok=true; break; fi
+          done
+          echo "---- stdout ----"; cat out.log || true
+          echo "---- stderr ----"; cat err.log || true
+          if [ "$ok" != true ]; then
+            echo "web UI never came up on http://127.0.0.1:5000" >&2
+            kill "$pid" 2>/dev/null || true
+            exit 1
+          fi
+          if ! grep -q "mounted" out.log err.log 2>/dev/null; then
+            echo "FUSE mount never came up (no 'mounted' log line)" >&2
+            kill "$pid" 2>/dev/null || true
+            exit 1
+          fi
+          kill "$pid" 2>/dev/null || true
+
+  build-windows-cross:
+    # Cheap compile-only check that the CGO_ENABLED=0 Windows cross-build
+    # (packaging/windows/build.sh) keeps working — see that script's own
+    # comment for why this is a real, proven-functional build and not
+    # just a type-check.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
+      - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
+
+  test-windows-real:
+    # build-windows-cross above only proves the code compiles for Windows,
+    # from a Linux runner, cross-compiled — not that it actually runs. This
+    # job is the real thing: a genuine, ephemeral Windows VM (GitHub's
+    # windows-latest runner, free for public repos, destroyed right after
+    # the job finishes — nothing installed on any contributor's own
+    # machine), with the one real runtime dependency (WinFsp) installed the
+    # same way a real user would, running the actual built binary and
+    # checking both the web UI and the FUSE/WinFsp mount genuinely come up.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Unit tests (CGO_ENABLED=0, matching the real shipped build)
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = "0"
+          go build ./...
+          go vet ./...
+          go test ./...
+      - name: Install WinFsp
+        run: choco install winfsp -y --no-progress
+      - name: Build via the real release packaging script
+        # Runs packaging/windows/build.sh itself (git-bash, preinstalled
+        # on windows-latest), not a hand-rolled re-implementation of it —
+        # this is the exact script a tagged release actually runs, icon
+        # embedding included, so a broken rsrc/build.sh change gets
+        # caught here on every push instead of only at release time.
+        shell: bash
+        run: VERSION=test-ci bash packaging/windows/build.sh
+      - name: Fake a minimal X-Plane + scenery layout (no real X-Plane needed)
+        shell: pwsh
+        run: |
+          $xplane = ("$env:RUNNER_TEMP/xplane" -replace '\\', '/')
+          $scenery = ("$env:RUNNER_TEMP/scenery" -replace '\\', '/')
+          New-Item -ItemType Directory -Force "$xplane/Custom Scenery" | Out-Null
+          New-Item -ItemType Directory -Force "$scenery/z_autoortho/scenery/z_ao_test" | Out-Null
+          $iniLines = @(
+            "[general]",
+            "gui = false",
+            "showconfig = false",
+            "debug = false",
+            "auto_open_ui = false",
+            "enable_tray = false",
+            "",
+            "[paths]",
+            "xplane_path = $xplane",
+            "scenery_path = $scenery"
+          )
+          $configPath = ("$env:USERPROFILE/.autoortho" -replace '\\', '/')
+          Set-Content -Path $configPath -Value $iniLines
+      - name: Run it for real and verify the web UI + mount come up
+        shell: pwsh
+        run: |
+          $exe = "dist\autoOr-simg-windows-amd64\autoOr-simg.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "packaging script didn't produce $exe"
+            exit 1
+          }
+          if (-not (Test-Path "dist\autoOr-simg-windows-amd64\install.ps1")) {
+            Write-Error "packaging script didn't include install.ps1"
+            exit 1
+          }
+          $proc = Start-Process -FilePath $exe -ArgumentList "run", "--headless" `
+            -PassThru -RedirectStandardOutput out.log -RedirectStandardError err.log
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            try {
+              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:5000/" -UseBasicParsing -TimeoutSec 2
+              if ($resp.StatusCode -eq 200) { $ok = $true; break }
+            } catch {}
+          }
+          Write-Host "---- stdout ----"; Get-Content out.log -ErrorAction SilentlyContinue
+          Write-Host "---- stderr ----"; Get-Content err.log -ErrorAction SilentlyContinue
+          if (-not $ok) {
+            Write-Error "web UI never came up on http://127.0.0.1:5000"
+            exit 1
+          }
+          if (-not (Select-String -Path out.log -Pattern "mounted" -Quiet)) {
+            Write-Error "FUSE/WinFsp mount never came up (no 'mounted' log line)"
+            exit 1
+          }
+          Stop-Process -Id $proc.Id -Force
+
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Build via the real release packaging script (produces autoOr-simg.app)
+        # Same reasoning as the Windows job: runs the actual
+        # packaging/macos/build.sh, icns/Info.plist/launcher-wrapper
+        # bundling included, so a broken change to that script is caught
+        # here on every push instead of only discovered at release time
+        # (or worse, by a user on a tagged release).
+        run: VERSION=test-ci bash packaging/macos/build.sh
+      - name: Verify the .app bundle looks right
+        run: |
+          # build.sh nests the .app one level down, inside its own
+          # arch-named stage dir — find it instead of hardcoding that path.
+          APP=$(find dist -maxdepth 2 -name "*.app" -print -quit)
+          test -n "$APP" || { echo "no .app bundle produced"; exit 1; }
+          test -f "$APP/Contents/Info.plist" || { echo "missing Info.plist"; exit 1; }
+          test -f "$APP/Contents/Resources/AppIcon.icns" || { echo "missing AppIcon.icns"; exit 1; }
+          test -x "$APP/Contents/MacOS/autoOr-simg-launcher" || { echo "missing launcher"; exit 1; }
+          test -x "$APP/Contents/MacOS/autoOr-simg" || { echo "missing real binary"; exit 1; }
+          echo "APP_PATH=$APP" >> "$GITHUB_ENV"
+      - name: Fake a minimal X-Plane + scenery layout (no real X-Plane needed)
+        run: |
+          mkdir -p "$RUNNER_TEMP/xplane/Custom Scenery"
+          mkdir -p "$RUNNER_TEMP/scenery/z_autoortho/scenery/z_ao_test"
+          cat > "$HOME/.autoortho" <<EOF
+          [general]
+          gui = false
+          showconfig = false
+          debug = false
+          auto_open_ui = false
+          enable_tray = false
+
+          [paths]
+          xplane_path = $RUNNER_TEMP/xplane
+          scenery_path = $RUNNER_TEMP/scenery
+          EOF
+      - name: Run the .app's launcher for real on actual macOS
+        # Can't assume the FUSE mount itself comes up here the way the
+        # Windows job proves WinFsp: macFUSE's kernel/system extension
+        # needs a one-time interactive security approval that no CI
+        # script can click through (Apple deliberately blocks silently
+        # approving this), so most macos-latest runners won't have a FUSE
+        # driver at all. Handle both possible outcomes honestly instead
+        # of assuming which one this runner gives: if it's actually
+        # running after a few seconds, verify the web UI for real, same
+        # as the other two platforms; if it already exited, it must have
+        # failed at the real mount attempt specifically (proving cgo and
+        # the rest of the binary are sound on real macOS) and not from
+        # something unrelated.
+        run: |
+          "./$APP_PATH/Contents/MacOS/autoOr-simg-launcher" -H > out.log 2> err.log &
+          pid=$!
+          sleep 5
+          echo "---- stdout so far ----"; cat out.log || true
+          echo "---- stderr so far ----"; cat err.log || true
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "still running after 5s — a FUSE driver must be present; verifying the web UI for real"
+            if ! curl -fsS -o /dev/null "http://127.0.0.1:5000/"; then
+              echo "process is running but the web UI never answered" >&2
+              kill "$pid" 2>/dev/null || true
+              exit 1
+            fi
+            kill "$pid" 2>/dev/null
+          else
+            wait "$pid"; code=$?
+            echo "exited with code $code (expected: no macFUSE on this runner)"
+            if ! grep -qi "mounting scenery" out.log err.log 2>/dev/null; then
+              echo "process failed, but not where expected (mounting scenery) — real breakage, not just 'no macFUSE here'" >&2
+              exit 1
+            fi
+          fi

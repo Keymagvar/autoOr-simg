@@ -1,0 +1,21 @@
+/autoortho
+/autoortho-minimal
+/autoOr-simg
+native/testdata/lib/
+
+# Build output and local run artifacts — never meant to be committed.
+/dist/
+*.exe
+*.test
+run.log
+*.log
+*.syso
+*.app/
+*.AppImage
+*.AppDir/
+squashfs-root/
+
+# Editor/IDE-local project files — machine-specific, never meant to be shared.
+.idea/
+.vscode/
+qodana.yaml

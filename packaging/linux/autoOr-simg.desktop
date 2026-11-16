@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=autoOr-simg
+Comment=Unofficial Go rewrite of kubilus1's AutoOrtho scenery streamer
+Exec=%{INSTALL_DIR}/autoOr-simg run
+Icon=%{INSTALL_DIR}/autoOr-simg.png
+Terminal=false
+Categories=Game;Utility;
+StartupWMClass=autoOr-simg
