@@ -2,6 +2,7 @@ package tile
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -224,7 +225,15 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 		// actually safe.
 		MaxWait: 30 * time.Millisecond,
 		DDS:     NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
-		log:     noopLogger{},
+		// Not noopLogger: a real windows-latest CI run hit this test's own
+		// 10s backstop below with only 202/256 ever served, and noopLogger
+		// silently swallows the exact Warn("chunk fetch failed...", "err",
+		// err) call (tile.go) that would say WHY the other 54 never
+		// reached the handler — a dropped/errored connection, a real
+		// per-request timeout, or something else entirely. A real logger
+		// here means the next failure (if there is one) is diagnosable
+		// from the CI log directly instead of requiring another guess.
+		log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 
 	tl.BuildMipmap(context.Background(), 0)
@@ -237,11 +246,18 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 
 	// Poll for the real target instead of a WaitGroup: see served's own
 	// comment above for why a WaitGroup here is an actual race, not just
-	// a style preference. deadline is a correctness backstop for a
-	// genuine regression elsewhere (e.g. a chunk fetch erroring out
-	// before reaching the handler) — not the mechanism this loop relies
-	// on; it should never come close to firing in the normal case.
-	deadline := time.Now().Add(10 * time.Second)
+	// a style preference. deadline is a correctness backstop, widened
+	// from 10s after a real windows-latest CI run hit it with only
+	// 202/256 served — genuinely unclear yet whether that run needed more
+	// real wall-clock time for 256 unbounded goroutines on a
+	// resource-constrained CI VM (plausible — nothing here is normally
+	// this concurrency-heavy in production, which always goes through a
+	// bounded fetchPool) or something was actually dropping requests; the
+	// log line above will say which if this fires again. 45s is well
+	// past perRequestTimeout's own 30s per-chunk bound (chunk.go), so a
+	// chunk that's going to fail outright will have definitely failed by
+	// then, not just be cut off mid-flight by this test's own impatience.
+	deadline := time.Now().Add(45 * time.Second)
 	for served.Load() < totalChunks {
 		if time.Now().After(deadline) {
 			t.Fatalf("only %d/%d chunk requests were ever served after unblocking — a real regression, not a timing fluke", served.Load(), totalChunks)
