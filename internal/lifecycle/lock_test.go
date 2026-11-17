@@ -71,11 +71,11 @@ func TestAcquireInstanceLock_CreatesParentDir(t *testing.T) {
 	}
 	defer l.Release()
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(pidPath(path))
 	if err != nil {
-		t.Fatalf("reading lock file: %v", err)
+		t.Fatalf("reading pid file: %v", err)
 	}
 	if string(data) == "" {
-		t.Error("lock file should contain the PID, got empty content")
+		t.Error("pid file should contain the PID, got empty content")
 	}
 }

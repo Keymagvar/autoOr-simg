@@ -8,6 +8,22 @@ import (
 	"testing"
 )
 
+// setTestHome points os.UserHomeDir() at dir for the duration of the test.
+// Setting HOME alone only works on Unix — Go's os.UserHomeDir() reads
+// %USERPROFILE% on Windows instead and ignores HOME entirely, so a test
+// that only set HOME was silently testing against the real CI runner's
+// actual home directory on Windows, not its own temp dir (confirmed the
+// hard way: this detect-xplane suite found zero candidates on a real
+// windows-latest run for exactly this reason). Setting both is harmless
+// cross-platform — Go only ever reads the one that matches the current
+// OS — so this one helper works everywhere instead of needing a
+// runtime.GOOS branch at every call site.
+func setTestHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 func mkXPlaneInstall(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(path, "Custom Scenery"), 0o755); err != nil {
@@ -40,7 +56,7 @@ func detectXPlane(t *testing.T, srv *Server) []xplaneCandidate {
 func TestAPIDetectXPlane_FindsDefaultSteamLibraryInstall(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	xp := filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "X-Plane 12")
 	mkXPlaneInstall(t, xp)
@@ -60,7 +76,7 @@ func TestAPIDetectXPlane_FindsDefaultSteamLibraryInstall(t *testing.T) {
 func TestAPIDetectXPlane_IgnoresFolderMissingCustomScenery(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	// A folder that merely starts with "X-Plane" but isn't a real install
 	// (no Custom Scenery, no Resources) must not be reported as a hit.
@@ -77,7 +93,7 @@ func TestAPIDetectXPlane_IgnoresFolderMissingCustomScenery(t *testing.T) {
 func TestAPIDetectXPlane_FindsInstallInSecondarySteamLibrary(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	secondLibrary := t.TempDir()
 	xp := filepath.Join(secondLibrary, "steamapps", "common", "X-Plane 11")
@@ -107,7 +123,7 @@ func TestAPIDetectXPlane_FindsInstallInSecondarySteamLibrary(t *testing.T) {
 
 func TestAPIDetectXPlane_NoCandidatesWhenNothingFound(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 
 	resp, err := http.Get("http://" + srv.Addr() + "/api/detect-xplane")
 	if err != nil {

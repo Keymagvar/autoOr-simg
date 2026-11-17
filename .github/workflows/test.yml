@@ -114,6 +114,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Install WinFsp
+        # Must happen before the unit tests below, not after: internal/fuse's
+        # own test suite does a real mount, which panics with "cannot find
+        # winfsp" if this hasn't run yet (confirmed the hard way — this used
+        # to run after the tests).
+        run: choco install winfsp -y --no-progress
       - name: Unit tests (CGO_ENABLED=0, matching the real shipped build)
         shell: pwsh
         run: |
@@ -121,8 +127,6 @@ jobs:
           go build ./...
           go vet ./...
           go test ./...
-      - name: Install WinFsp
-        run: choco install winfsp -y --no-progress
       - name: Build via the real release packaging script
         # Runs packaging/windows/build.sh itself (git-bash, preinstalled
         # on windows-latest), not a hand-rolled re-implementation of it —

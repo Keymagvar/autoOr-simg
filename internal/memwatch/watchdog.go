@@ -20,13 +20,8 @@
 package memwatch
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"log/slog"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"autoOr-simg/internal/logging"
@@ -142,67 +137,15 @@ func (w *Watchdog) Run(ctx context.Context) {
 	}
 }
 
-// ReadRSSBytes reads this process's current resident set size from
-// /proc/self/status's VmRSS line (reported in kB) — Linux-only, matching
-// every other /proc-based check already in this codebase
-// (internal/lifecycle's IsMounted).
-func ReadRSSBytes() (uint64, error) {
-	f, err := os.Open("/proc/self/status")
-	if err != nil {
-		return 0, fmt.Errorf("opening /proc/self/status: %w", err)
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "VmRSS:") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return 0, fmt.Errorf("unexpected VmRSS line format: %q", line)
-		}
-		kb, err := strconv.ParseUint(fields[1], 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("parsing VmRSS value %q: %w", fields[1], err)
-		}
-		return kb * 1024, nil
-	}
-	if err := scanner.Err(); err != nil {
-		return 0, err
-	}
-	return 0, fmt.Errorf("VmRSS not found in /proc/self/status")
-}
-
-// TotalSystemMemoryBytes reads total system RAM from /proc/meminfo's
-// MemTotal line (reported in kB) — used once at startup to turn
-// config.Memory's percentages into absolute Thresholds.
-func TotalSystemMemoryBytes() (uint64, error) {
-	f, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return 0, fmt.Errorf("opening /proc/meminfo: %w", err)
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "MemTotal:") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			return 0, fmt.Errorf("unexpected MemTotal line format: %q", line)
-		}
-		kb, err := strconv.ParseUint(fields[1], 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("parsing MemTotal value %q: %w", fields[1], err)
-		}
-		return kb * 1024, nil
-	}
-	if err := scanner.Err(); err != nil {
-		return 0, err
-	}
-	return 0, fmt.Errorf("MemTotal not found in /proc/meminfo")
-}
+// ReadRSSBytes reads this process's current resident set size, and
+// TotalSystemMemoryBytes reads total system RAM — both real platform
+// queries, not an internal counter. Implemented per-platform:
+// watchdog_linux.go (/proc), watchdog_windows.go (GetProcessMemoryInfo/
+// GlobalMemoryStatusEx), watchdog_darwin.go (getrusage/sysctl hw.memsize).
+// Until this session, only the Linux path existed at all, unconditionally
+// (no build tag): it compiled fine everywhere — plain Go, just a
+// hardcoded "/proc/..." path — but failed at runtime on Windows/macOS,
+// where that path simply doesn't exist. This package's entire safety net
+// silently never worked anywhere but Linux, which nothing short of an
+// actual run on those platforms could have caught (confirmed the hard
+// way, by a real windows-latest CI run).

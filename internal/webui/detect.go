@@ -34,10 +34,27 @@ func (s *Server) handleAPIDetectXPlane(w http.ResponseWriter, r *http.Request) {
 	}
 
 	roots := []string{
+		// Linux
 		filepath.Join(home, ".local", "share", "Steam", "steamapps", "common"),
 		filepath.Join(home, ".steam", "steam", "steamapps", "common"),
 		filepath.Join(home, ".steam", "root", "steamapps", "common"),
 		filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam", "steamapps", "common"),
+		// macOS
+		filepath.Join(home, "Library", "Application Support", "Steam", "steamapps", "common"),
+	}
+	// Windows — not home-relative at all (Steam's own default install
+	// location, independent of which user is logged in). Guarded on the
+	// env var actually being set, unlike the paths above: filepath.Join
+	// silently drops an empty first element rather than erroring, so an
+	// unguarded join here would resolve to a bare relative "Steam/..."  —
+	// which os.ReadDir would then happily check against the *working*
+	// directory on a platform where this variable doesn't exist, a wrong
+	// answer instead of the clean "doesn't exist, skip it" every other
+	// root gets.
+	for _, envVar := range []string{"ProgramFiles(x86)", "ProgramFiles"} {
+		if dir := os.Getenv(envVar); dir != "" {
+			roots = append(roots, filepath.Join(dir, "Steam", "steamapps", "common"))
+		}
 	}
 	roots = append(roots, steamLibraryCommonDirs(home)...)
 
@@ -62,14 +79,22 @@ func (s *Server) handleAPIDetectXPlane(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A handful of common non-Steam, manual-install locations too.
-	for _, manual := range []string{
+	manualDirs := []string{
 		filepath.Join(home, "X-Plane 12"),
 		filepath.Join(home, "X-Plane 11"),
 		filepath.Join(home, "Games", "X-Plane 12"),
 		filepath.Join(home, "Games", "X-Plane 11"),
 		"/opt/X-Plane 12",
 		"/opt/X-Plane 11",
-	} {
+	}
+	for _, envVar := range []string{"ProgramFiles(x86)", "ProgramFiles"} {
+		if dir := os.Getenv(envVar); dir != "" {
+			manualDirs = append(manualDirs,
+				filepath.Join(dir, "X-Plane 12"),
+				filepath.Join(dir, "X-Plane 11"))
+		}
+	}
+	for _, manual := range manualDirs {
 		if seen[manual] {
 			continue
 		}
@@ -92,14 +117,18 @@ func (s *Server) handleAPIDetectXPlane(w http.ResponseWriter, r *http.Request) {
 // real X-Plane install from an arbitrarily-named or empty folder: its own
 // Custom Scenery directory (required — this is exactly what AutoOrtho
 // itself reads/writes under, via config.XplaneCustomSceneryPath) and
-// either the Linux launcher binary or the Resources folder every real
-// install ships, so a renamed-but-empty folder doesn't false-positive.
+// either a platform launcher binary or the Resources folder every real
+// install ships (on every platform, including inside X-Plane.app on
+// macOS, which is itself a directory), so a renamed-but-empty folder
+// doesn't false-positive.
 func looksLikeXPlaneDir(path string) bool {
 	if info, err := os.Stat(filepath.Join(path, "Custom Scenery")); err != nil || !info.IsDir() {
 		return false
 	}
-	if info, err := os.Stat(filepath.Join(path, "X-Plane-x86_64")); err == nil && !info.IsDir() {
-		return true
+	for _, launcher := range []string{"X-Plane-x86_64", "X-Plane.exe", "X-Plane.app"} {
+		if _, err := os.Stat(filepath.Join(path, launcher)); err == nil {
+			return true
+		}
 	}
 	if info, err := os.Stat(filepath.Join(path, "Resources")); err == nil && info.IsDir() {
 		return true
@@ -116,9 +145,17 @@ var steamVDFPathRe = regexp.MustCompile(`"path"\s*"([^"]+)"`)
 // VDF format change degrades to "finds nothing extra", not a crash.
 func steamLibraryCommonDirs(home string) []string {
 	vdfPaths := []string{
+		// Linux
 		filepath.Join(home, ".local", "share", "Steam", "steamapps", "libraryfolders.vdf"),
 		filepath.Join(home, ".steam", "steam", "steamapps", "libraryfolders.vdf"),
 		filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam", "steamapps", "libraryfolders.vdf"),
+		// macOS
+		filepath.Join(home, "Library", "Application Support", "Steam", "steamapps", "libraryfolders.vdf"),
+	}
+	for _, envVar := range []string{"ProgramFiles(x86)", "ProgramFiles"} {
+		if dir := os.Getenv(envVar); dir != "" {
+			vdfPaths = append(vdfPaths, filepath.Join(dir, "Steam", "steamapps", "libraryfolders.vdf"))
+		}
 	}
 
 	var dirs []string

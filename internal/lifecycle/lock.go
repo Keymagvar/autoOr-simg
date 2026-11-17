@@ -16,12 +16,31 @@ import (
 
 // InstanceLock is the DESIGN.md §4(a) single-instance guard: an exclusive
 // OS-level file lock (flock(2) on Unix, LockFileEx on Windows, both via
-// gofrs/flock) on a well-known lock file, with the current PID written
-// inside it so a second instance can report *who* is already running, not
-// just that something is.
+// gofrs/flock) on a well-known lock file, with the current PID written to
+// a companion file alongside it so a second instance can report *who* is
+// already running, not just that something is.
+//
+// The PID is deliberately NOT written into the locked file itself: on
+// Windows, LockFileEx takes a mandatory byte-range lock (offset 0, length
+// 1) via gofrs/flock's own internal file handle, and gofrs/flock exposes
+// no way to write through that handle. A second, independent os.WriteFile
+// to the same path collides with that locked byte range — even from the
+// very same process — and fails with "The process cannot access the file
+// because another process has locked a portion of the file" (confirmed
+// the hard way: this used to target the same file and every
+// lock-acquiring test failed on a real windows-latest CI run, having
+// never actually been exercised on Windows before that). A companion
+// file has no such handle to collide with and needs no Windows-specific
+// code path at all.
 type InstanceLock struct {
 	fl   *flock.Flock
 	path string
+}
+
+// pidPath is where the PID actually lives — see InstanceLock's doc
+// comment for why it isn't just path itself.
+func pidPath(path string) string {
+	return path + ".pid"
 }
 
 // ErrAlreadyRunning is returned by AcquireInstanceLock when another live
@@ -61,16 +80,16 @@ func AcquireInstanceLock(path string) (*InstanceLock, error) {
 
 	// Truncate+write happens after the lock is held, so a reader never
 	// sees a half-written PID from a process that's mid-startup.
-	if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+	if err := os.WriteFile(pidPath(path), []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
 		_ = fl.Unlock()
-		return nil, fmt.Errorf("writing pid to lock file: %w", err)
+		return nil, fmt.Errorf("writing pid file: %w", err)
 	}
 
 	return &InstanceLock{fl: fl, path: path}, nil
 }
 
 func readLockPID(path string) int {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(pidPath(path))
 	if err != nil {
 		return 0
 	}
