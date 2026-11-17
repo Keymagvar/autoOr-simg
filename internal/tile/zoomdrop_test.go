@@ -171,24 +171,29 @@ func TestBuildMipmap_Mip0FullZoomWhenBuildSemNotSaturated(t *testing.T) {
 
 	buildSem := make(chan struct{}, 32) // empty — nowhere near saturated
 
+	// A real, bounded fetchPool — not nil. A nil fetchPool makes
+	// fetchGrid fire all 256 chunk fetches as their own unbounded
+	// goroutines (tile.go), which production never does (Cacher always
+	// bounds this) and which a real windows-latest CI run showed isn't
+	// free even with a tuned HTTP client: the bottleneck was the raw
+	// 256-way concurrency itself, not just connection reuse. See
+	// bc1cache_test.go's TestBuildMipmap_PersistsBC1CacheOnCleanBuild for
+	// the full finding.
+	pool := NewFetchPool(defaultFetchThreads)
+	t.Cleanup(pool.Close)
+
 	tl := &Tile{
 		Row: 0, Col: 0, Zoom: 16,
-		Maptype:  "TEST",
-		MinZoom:  10,
-		CacheDir: t.TempDir(),
-		Provider: testProvider,
-		// Not a bare &http.Client{} — see newTileHTTPClient's doc comment
-		// (cache.go) and bc1cache_test.go's TestBuildMipmap_
-		// PersistsBC1CacheOnCleanBuild for the real finding: Go's default
-		// Transport only keeps 2 idle connections per host, which turns a
-		// 256-concurrent-fetch burst into 256 fresh TCP handshakes instead
-		// of connection reuse — cheap on Linux, measurably expensive on
-		// Windows (confirmed on a real windows-latest CI run).
-		Client:   newTileHTTPClient(GridSize * GridSize),
-		MaxWait:  5 * time.Second,
-		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
-		log:      noopLogger{},
-		buildSem: buildSem,
+		Maptype:   "TEST",
+		MinZoom:   10,
+		CacheDir:  t.TempDir(),
+		Provider:  testProvider,
+		fetchPool: pool,
+		Client:    newTileHTTPClient(defaultFetchThreads),
+		MaxWait:   5 * time.Second,
+		DDS:       NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
+		log:       noopLogger{},
+		buildSem:  buildSem,
 	}
 
 	tl.BuildMipmap(context.Background(), 0)

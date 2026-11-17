@@ -30,29 +30,38 @@ func TestBuildMipmap_PersistsBC1CacheOnCleanBuild(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// A real fetchPool, same as every Tile actually gets from Cacher —
+	// not the nil fetchPool a bare struct literal leaves you with. That
+	// nil case falls back to firing every chunk fetch as its own
+	// unbounded goroutine (tile.go's fetchGrid), which is not what
+	// production ever does (Cacher always bounds this via fetchPool) and
+	// turned out not to be free on Windows CI either: even after tuning
+	// the HTTP client's idle-connection pool (newTileHTTPClient, below),
+	// a real windows-latest run still only completed 223-256 of a
+	// 256-chunk unbounded burst inside a 5s MaxWait — the bottleneck
+	// wasn't just connection reuse, it was genuinely firing 256
+	// concurrent goroutines/syscalls at once on a resource-constrained CI
+	// VM. Bounding it to defaultFetchThreads workers matches what real
+	// usage actually looks like and is the real fix, not another
+	// timeout bump.
+	pool := NewFetchPool(defaultFetchThreads)
+	t.Cleanup(pool.Close)
+
 	cacheDir := t.TempDir()
 	tl := &Tile{
 		Row: 0, Col: 0, Zoom: 10,
-		Maptype:  "TEST",
-		MinZoom:  10,
-		CacheDir: cacheDir,
-		Provider: testProviderFor(srv.URL),
-		// Not a bare &http.Client{}: this Tile has no fetchPool (direct
-		// construction, not via Cacher), so all 256 chunk fetches fire as
-		// unbounded concurrent goroutines straight at the local httptest
-		// server — and Go's http.DefaultTransport only keeps 2 idle
-		// connections per host, so without this every one of those 256
-		// requests opens and tears down a fresh TCP connection instead of
-		// reusing one. Cheap churn on Linux; a real windows-latest CI run
-		// showed it reliably taking 10+ seconds for this exact burst on
-		// Windows — not occasional slowness, consistently pinned at
-		// whatever timeout was configured, the signature of a real
-		// per-request bottleneck. See newTileHTTPClient's own doc comment
-		// (cache.go) for the full finding — this mirrors the same fix
-		// production's shared Cacher.DefaultClient now gets, since this
-		// Tile bypasses Cacher entirely and builds its own client.
-		Client:  newTileHTTPClient(GridSize * GridSize),
-		MaxWait: 5 * time.Second, // real margin, not a timeout fight — see Client's comment above for why this used to need 10s+
+		Maptype:   "TEST",
+		MinZoom:   10,
+		CacheDir:  cacheDir,
+		Provider:  testProviderFor(srv.URL),
+		fetchPool: pool,
+		// See newTileHTTPClient's own doc comment (cache.go): Go's
+		// http.DefaultTransport only keeps 2 idle connections per host,
+		// so a bare &http.Client{} churns through fresh TCP connections
+		// instead of reusing them — this mirrors the same tuning
+		// production's shared Cacher.DefaultClient gets.
+		Client:  newTileHTTPClient(defaultFetchThreads),
+		MaxWait: 5 * time.Second,
 		DDS:     NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		log:     noopLogger{},
 	}
@@ -92,16 +101,23 @@ func TestBuildMipmap_LoadsBC1CacheWithoutNetwork(t *testing.T) {
 	cacheDir := t.TempDir()
 	provider := testProviderFor(srv.URL)
 	newTile := func() *Tile {
+		// Real, bounded fetchPool — see TestBuildMipmap_
+		// PersistsBC1CacheOnCleanBuild's pool comment above for why a nil
+		// fetchPool (unbounded 256-goroutine burst) isn't just a test
+		// artifact, it's genuinely slower on Windows CI.
+		pool := NewFetchPool(defaultFetchThreads)
+		t.Cleanup(pool.Close)
 		return &Tile{
 			Row: 0, Col: 0, Zoom: 10,
-			Maptype:  "TEST",
-			MinZoom:  10,
-			CacheDir: cacheDir,
-			Provider: provider,
-			Client:   newTileHTTPClient(GridSize * GridSize), // see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's Client comment above
-			MaxWait:  5 * time.Second,
-			DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
-			log:      noopLogger{},
+			Maptype:   "TEST",
+			MinZoom:   10,
+			CacheDir:  cacheDir,
+			Provider:  provider,
+			fetchPool: pool,
+			Client:    newTileHTTPClient(defaultFetchThreads),
+			MaxWait:   5 * time.Second,
+			DDS:       NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
+			log:       noopLogger{},
 		}
 	}
 
@@ -217,17 +233,26 @@ func TestBuildMipmap_DoesNotPersistBuildWithConfirmedEmptyChunk(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// Same risk as the clean-build tests above: a confirmed-empty response
+	// still means every one of the 256 chunks completes quickly, so this
+	// is the same unbounded-burst-vs-instant-server shape a nil fetchPool
+	// made slow on real Windows CI — see TestBuildMipmap_
+	// PersistsBC1CacheOnCleanBuild's pool comment.
+	pool := NewFetchPool(defaultFetchThreads)
+	t.Cleanup(pool.Close)
+
 	cacheDir := t.TempDir()
 	tl := &Tile{
 		Row: 0, Col: 0, Zoom: 10,
-		Maptype:  "TEST",
-		MinZoom:  10,
-		CacheDir: cacheDir,
-		Provider: testProviderFor(srv.URL),
-		Client:   newTileHTTPClient(GridSize * GridSize), // see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's Client comment — same 256-concurrent-fetch burst
-		MaxWait:  2 * time.Second,
-		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
-		log:      noopLogger{},
+		Maptype:   "TEST",
+		MinZoom:   10,
+		CacheDir:  cacheDir,
+		Provider:  testProviderFor(srv.URL),
+		fetchPool: pool,
+		Client:    newTileHTTPClient(defaultFetchThreads),
+		MaxWait:   2 * time.Second,
+		DDS:       NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
+		log:       noopLogger{},
 	}
 
 	tl.BuildMipmap(context.Background(), 0)
