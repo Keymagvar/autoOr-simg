@@ -99,6 +99,38 @@ const defaultMaxOpenTiles = 300
 // used when NewCacher is given <= 0.
 const defaultFetchThreads = 32
 
+// newTileHTTPClient builds the one shared http.Client every chunk fetch
+// goes through, with its Transport's connection-reuse pool actually sized
+// for real concurrency instead of left at Go's own default.
+//
+// Real finding, not theoretical: with no explicit Transport, http.Client
+// inherits http.DefaultTransport's MaxIdleConnsPerHost of 2. That's a cap
+// on how many *idle* (kept-alive, reusable) connections per host survive
+// between requests — not a hard concurrency limit, so it doesn't block
+// anything — but once fetchThreads concurrent goroutines are hitting the
+// same provider host, only 2 connections ever stay warm; the rest get
+// opened fresh and torn down on every single request instead of being
+// reused. Linux's TCP stack treats that churn as cheap. A real
+// windows-latest CI run surfaced that Windows very much does not: the
+// exact same unbounded-concurrent-fetch test code that passes in well
+// under a second on Linux was reliably taking 10+ seconds for a 256-chunk
+// burst on Windows — not occasionally slow, but consistently pinned right
+// at whatever timeout was configured, regardless of how generous, which
+// is the signature of a systemic per-request bottleneck, not ordinary
+// variance. Raising MaxIdleConnsPerHost to actually cover real concurrency
+// lets connections be reused instead of reopened, which is the fix that
+// actually addresses the mechanism — a bigger timeout number alone would
+// have just hidden the same bottleneck for one more test run.
+func newTileHTTPClient(fetchThreads int) *http.Client {
+	if fetchThreads <= 0 {
+		fetchThreads = defaultFetchThreads
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = fetchThreads
+	transport.MaxConnsPerHost = 0                         // no cap — fetchThreads/the fetch pool already bounds real concurrency
+	return &http.Client{Timeout: 0, Transport: transport} // see DESIGN.md's http.Client.Timeout lesson — no blanket deadline on what may be a slow tile fetch
+}
+
 func NewCacher(cacheDir string, maxTiles int, maxWait time.Duration, maxConcurrentBuilds, maxOpenTiles, fetchThreads int) *Cacher {
 	if maxTiles <= 0 {
 		maxTiles = 25 // matches getortho.py's default cache_tile_lim
@@ -117,7 +149,7 @@ func NewCacher(cacheDir string, maxTiles int, maxWait time.Duration, maxConcurre
 		maxTiles:      maxTiles,
 		CacheDir:      cacheDir,
 		fetchPool:     NewFetchPool(fetchThreads),
-		DefaultClient: &http.Client{Timeout: 0}, // see DESIGN.md's http.Client.Timeout lesson — no blanket deadline on what may be a slow tile fetch
+		DefaultClient: newTileHTTPClient(fetchThreads),
 		MaxWait:       maxWait,
 		log:           logging.For("tilecache"),
 		buildSem:      make(chan struct{}, maxConcurrentBuilds),

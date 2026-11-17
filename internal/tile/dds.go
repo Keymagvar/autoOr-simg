@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	ddsMagic        = "DDS "
-	ddsHeaderSize   = 128 // magic (4) + the fixed-size header struct (124) that follows
-	bc1BlockSize    = 8
-	ddsFlags        = 0x1 | 0x2 | 0x4 | 0x1000 | 0x20000 | 0x80000 // CAPS|HEIGHT|WIDTH|PIXELFORMAT|MIPMAPCOUNT|LINEARSIZE
+	ddsMagic         = "DDS "
+	ddsHeaderSize    = 128 // magic (4) + the fixed-size header struct (124) that follows
+	bc1BlockSize     = 8
+	ddsFlags         = 0x1 | 0x2 | 0x4 | 0x1000 | 0x20000 | 0x80000 // CAPS|HEIGHT|WIDTH|PIXELFORMAT|MIPMAPCOUNT|LINEARSIZE
 	ddsPfFlagsFourCC = 0x4
-	ddsCaps         = 0x1000 | 0x400000 // TEXTURE | COMPLEX(mipmap)
+	ddsCaps          = 0x1000 | 0x400000 // TEXTURE | COMPLEX(mipmap)
 )
 
 // Mipmap tracks one level of the chain: its byte range within the DDS
@@ -128,27 +128,27 @@ func DDSSize() int {
 func (d *DDS) Header() []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteString(ddsMagic)
-	binary.Write(buf, binary.LittleEndian, uint32(124))                  // size
-	binary.Write(buf, binary.LittleEndian, uint32(ddsFlags))             // flags
-	binary.Write(buf, binary.LittleEndian, uint32(d.Height))             // height
-	binary.Write(buf, binary.LittleEndian, uint32(d.Width))              // width
+	binary.Write(buf, binary.LittleEndian, uint32(124))      // size
+	binary.Write(buf, binary.LittleEndian, uint32(ddsFlags)) // flags
+	binary.Write(buf, binary.LittleEndian, uint32(d.Height)) // height
+	binary.Write(buf, binary.LittleEndian, uint32(d.Width))  // width
 	pitchOrLinearSize := uint32(max(1, (d.Width*d.Height)>>4) * bc1BlockSize)
 	binary.Write(buf, binary.LittleEndian, pitchOrLinearSize)
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // depth
-	binary.Write(buf, binary.LittleEndian, uint32(len(d.Mipmaps)))       // mipMapCount
-	buf.Write(make([]byte, 44))                                          // reserved1
-	binary.Write(buf, binary.LittleEndian, uint32(32))                   // pfSize
-	binary.Write(buf, binary.LittleEndian, uint32(ddsPfFlagsFourCC))     // pfFlags
-	buf.WriteString("DXT1")                                              // fourCC
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // rgbBitCount
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // rBitMask
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // gBitMask
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // bBitMask
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // aBitMask
-	binary.Write(buf, binary.LittleEndian, uint32(ddsCaps))              // caps
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // caps2
-	buf.Write(make([]byte, 8))                                           // reservedCaps[2]
-	binary.Write(buf, binary.LittleEndian, uint32(0))                    // reserved2
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // depth
+	binary.Write(buf, binary.LittleEndian, uint32(len(d.Mipmaps)))   // mipMapCount
+	buf.Write(make([]byte, 44))                                      // reserved1
+	binary.Write(buf, binary.LittleEndian, uint32(32))               // pfSize
+	binary.Write(buf, binary.LittleEndian, uint32(ddsPfFlagsFourCC)) // pfFlags
+	buf.WriteString("DXT1")                                          // fourCC
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // rgbBitCount
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // rBitMask
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // gBitMask
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // bBitMask
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // aBitMask
+	binary.Write(buf, binary.LittleEndian, uint32(ddsCaps))          // caps
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // caps2
+	buf.Write(make([]byte, 8))                                       // reservedCaps[2]
+	binary.Write(buf, binary.LittleEndian, uint32(0))                // reserved2
 
 	h := buf.Bytes()
 	if len(h) != ddsHeaderSize {

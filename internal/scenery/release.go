@@ -34,9 +34,9 @@ type Release struct {
 	Cleaned    bool
 	Parsed     bool
 
-	OrthoDirs      []string
-	DownloadCount  int
-	Packages       map[string]*Package
+	OrthoDirs     []string
+	DownloadCount int
+	Packages      map[string]*Package
 
 	ghRelease *ghRelease
 	log       *slog.Logger

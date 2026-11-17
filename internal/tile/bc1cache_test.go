@@ -37,19 +37,22 @@ func TestBuildMipmap_PersistsBC1CacheOnCleanBuild(t *testing.T) {
 		MinZoom:  10,
 		CacheDir: cacheDir,
 		Provider: testProviderFor(srv.URL),
-		Client:   &http.Client{},
-		// Generous on purpose: this Tile has no fetchPool (direct
+		// Not a bare &http.Client{}: this Tile has no fetchPool (direct
 		// construction, not via Cacher), so all 256 chunk fetches fire as
 		// unbounded concurrent goroutines straight at the local httptest
-		// server. A real windows-latest CI run took >2s but <10s to
-		// finish that burst — Windows' loopback TCP stack handles a
-		// sudden spike of concurrent short-lived connections measurably
-		// slower than Linux's — and this test's actual assertion
-		// (allFresh ends up true, BC1 cache gets written) silently
-		// degrades to false on any timeout, so a too-tight budget here
-		// was failing the test without the build logic itself being
-		// wrong.
-		MaxWait: 10 * time.Second,
+		// server — and Go's http.DefaultTransport only keeps 2 idle
+		// connections per host, so without this every one of those 256
+		// requests opens and tears down a fresh TCP connection instead of
+		// reusing one. Cheap churn on Linux; a real windows-latest CI run
+		// showed it reliably taking 10+ seconds for this exact burst on
+		// Windows — not occasional slowness, consistently pinned at
+		// whatever timeout was configured, the signature of a real
+		// per-request bottleneck. See newTileHTTPClient's own doc comment
+		// (cache.go) for the full finding — this mirrors the same fix
+		// production's shared Cacher.DefaultClient now gets, since this
+		// Tile bypasses Cacher entirely and builds its own client.
+		Client:  newTileHTTPClient(GridSize * GridSize),
+		MaxWait: 5 * time.Second, // real margin, not a timeout fight — see Client's comment above for why this used to need 10s+
 		DDS:     NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		log:     noopLogger{},
 	}
@@ -95,8 +98,8 @@ func TestBuildMipmap_LoadsBC1CacheWithoutNetwork(t *testing.T) {
 			MinZoom:  10,
 			CacheDir: cacheDir,
 			Provider: provider,
-			Client:   &http.Client{},
-			MaxWait:  10 * time.Second, // generous on purpose — see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's own MaxWait comment
+			Client:   newTileHTTPClient(GridSize * GridSize), // see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's Client comment above
+			MaxWait:  5 * time.Second,
 			DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 			log:      noopLogger{},
 		}
@@ -171,7 +174,7 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 		MinZoom:  10,
 		CacheDir: cacheDir,
 		Provider: testProviderFor(srv.URL),
-		Client:   &http.Client{},
+		Client:   newTileHTTPClient(GridSize * GridSize), // see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's Client comment
 		MaxWait:  30 * time.Millisecond,
 		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		log:      noopLogger{},
@@ -188,10 +191,13 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 	// inFlight.Wait() only confirms the server finished writing each
 	// response — each client goroutine still has to read the body and
 	// save_cache() to disk afterward. A short settle window for that
-	// client-side tail, same order of magnitude as this file's own
-	// polling intervals, so TempDir's cleanup doesn't race those last
-	// writes.
-	time.Sleep(50 * time.Millisecond)
+	// client-side tail so TempDir's cleanup doesn't race those last
+	// writes — widened from 50ms after a real windows-latest CI run hit
+	// "directory not empty" at cleanup: Windows' own file-close/delete
+	// semantics are more asynchronous than POSIX unlink (a real, known
+	// platform difference, not just this test running slower), so a
+	// handle can still be settling even after the write syscall returns.
+	time.Sleep(250 * time.Millisecond)
 }
 
 // TestBuildMipmap_DoesNotPersistBuildWithConfirmedEmptyChunk is the most
@@ -218,8 +224,8 @@ func TestBuildMipmap_DoesNotPersistBuildWithConfirmedEmptyChunk(t *testing.T) {
 		MinZoom:  10,
 		CacheDir: cacheDir,
 		Provider: testProviderFor(srv.URL),
-		Client:   &http.Client{},
-		MaxWait:  200 * time.Millisecond,
+		Client:   newTileHTTPClient(GridSize * GridSize), // see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's Client comment — same 256-concurrent-fetch burst
+		MaxWait:  2 * time.Second,
 		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		log:      noopLogger{},
 	}

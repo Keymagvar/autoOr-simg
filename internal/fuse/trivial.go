@@ -27,8 +27,8 @@ type Trivial struct {
 	fuse.FileSystemBase
 	log *slog.Logger
 
-	mu      sync.Mutex
-	opens   int // outstanding open file handles, for shutdown diagnostics
+	mu    sync.Mutex
+	opens int // outstanding open file handles, for shutdown diagnostics
 }
 
 func NewTrivial() *Trivial {

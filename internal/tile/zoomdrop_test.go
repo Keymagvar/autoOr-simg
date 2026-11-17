@@ -177,13 +177,15 @@ func TestBuildMipmap_Mip0FullZoomWhenBuildSemNotSaturated(t *testing.T) {
 		MinZoom:  10,
 		CacheDir: t.TempDir(),
 		Provider: testProvider,
-		Client:   &http.Client{},
-		// Generous on purpose — same reasoning as
-		// bc1cache_test.go's TestBuildMipmap_PersistsBC1CacheOnCleanBuild:
-		// 256 chunk fetches as unbounded concurrent goroutines against a
-		// local httptest server, real windows-latest CI timing needed
-		// more than 5s to reliably clear that burst.
-		MaxWait:  15 * time.Second,
+		// Not a bare &http.Client{} — see newTileHTTPClient's doc comment
+		// (cache.go) and bc1cache_test.go's TestBuildMipmap_
+		// PersistsBC1CacheOnCleanBuild for the real finding: Go's default
+		// Transport only keeps 2 idle connections per host, which turns a
+		// 256-concurrent-fetch burst into 256 fresh TCP handshakes instead
+		// of connection reuse — cheap on Linux, measurably expensive on
+		// Windows (confirmed on a real windows-latest CI run).
+		Client:   newTileHTTPClient(GridSize * GridSize),
+		MaxWait:  5 * time.Second,
 		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		log:      noopLogger{},
 		buildSem: buildSem,
