@@ -178,7 +178,12 @@ func TestBuildMipmap_Mip0FullZoomWhenBuildSemNotSaturated(t *testing.T) {
 		CacheDir: t.TempDir(),
 		Provider: testProvider,
 		Client:   &http.Client{},
-		MaxWait:  5 * time.Second,
+		// Generous on purpose — same reasoning as
+		// bc1cache_test.go's TestBuildMipmap_PersistsBC1CacheOnCleanBuild:
+		// 256 chunk fetches as unbounded concurrent goroutines against a
+		// local httptest server, real windows-latest CI timing needed
+		// more than 5s to reliably clear that burst.
+		MaxWait:  15 * time.Second,
 		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		log:      noopLogger{},
 		buildSem: buildSem,

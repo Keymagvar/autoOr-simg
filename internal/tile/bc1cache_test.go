@@ -38,9 +38,20 @@ func TestBuildMipmap_PersistsBC1CacheOnCleanBuild(t *testing.T) {
 		CacheDir: cacheDir,
 		Provider: testProviderFor(srv.URL),
 		Client:   &http.Client{},
-		MaxWait:  2 * time.Second,
-		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
-		log:      noopLogger{},
+		// Generous on purpose: this Tile has no fetchPool (direct
+		// construction, not via Cacher), so all 256 chunk fetches fire as
+		// unbounded concurrent goroutines straight at the local httptest
+		// server. A real windows-latest CI run took >2s but <10s to
+		// finish that burst — Windows' loopback TCP stack handles a
+		// sudden spike of concurrent short-lived connections measurably
+		// slower than Linux's — and this test's actual assertion
+		// (allFresh ends up true, BC1 cache gets written) silently
+		// degrades to false on any timeout, so a too-tight budget here
+		// was failing the test without the build logic itself being
+		// wrong.
+		MaxWait: 10 * time.Second,
+		DDS:     NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
+		log:     noopLogger{},
 	}
 
 	tl.BuildMipmap(context.Background(), 0)
@@ -85,7 +96,7 @@ func TestBuildMipmap_LoadsBC1CacheWithoutNetwork(t *testing.T) {
 			CacheDir: cacheDir,
 			Provider: provider,
 			Client:   &http.Client{},
-			MaxWait:  2 * time.Second,
+			MaxWait:  10 * time.Second, // generous on purpose — see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's own MaxWait comment
 			DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 			log:      noopLogger{},
 		}
