@@ -2,6 +2,7 @@ package tile
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,15 +60,18 @@ func TestBuildMipmap_OverBudgetSkipsRealBuild(t *testing.T) {
 
 	tl := &Tile{
 		Row: 0, Col: 0, Zoom: 10,
-		Maptype:    "TEST",
-		MinZoom:    10,
-		CacheDir:   t.TempDir(),
-		Provider:   testProvider,
-		fetchPool:  pool,
-		Client:     newTileHTTPClient(defaultFetchThreads),
-		MaxWait:    defaultMaxWait,
-		DDS:        NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
-		log:        noopLogger{},
+		Maptype:   "TEST",
+		MinZoom:   10,
+		CacheDir:  t.TempDir(),
+		Provider:  testProvider,
+		fetchPool: pool,
+		Client:    newTileHTTPClient(defaultFetchThreads),
+		MaxWait:   defaultMaxWait,
+		DDS:       NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
+		// Real logger, not noopLogger: cheap insurance so a future failure
+		// here is diagnosable from the CI log directly (see bc1cache_test.go's
+		// TestBuildMipmap_DoesNotPersistDegradedBuild for why that mattered).
+		log:        slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		overBudget: over.Load,
 	}
 
@@ -111,12 +115,16 @@ func TestBuildMipmap_OverBudgetSkipsRealBuild(t *testing.T) {
 	// BuildMipmap returns, every write has genuinely completed, not just
 	// been started. This sleep is for what happens after that: on a real
 	// windows-latest CI run, TempDir's own cleanup (registered by
-	// t.TempDir() above) still hit "directory not empty" even though every
-	// write had finished, because Windows' file-close/directory-entry
-	// settling isn't synchronous with the close() syscall returning the
-	// way POSIX unlink is — a handle or AV scan can still be settling
-	// briefly after. Real margin for that, not a timeout fight.
-	time.Sleep(100 * time.Millisecond)
+	// t.TempDir() above) still hit "directory not empty" even at 100ms,
+	// because Windows' file-close/directory-entry settling isn't
+	// synchronous with the close() syscall returning the way POSIX unlink
+	// is — a handle or AV scan can still be settling briefly after.
+	// Widened to match bc1cache_test.go's TestBuildMipmap_
+	// DoesNotPersistDegradedBuild, which needed the same jump (250ms was
+	// also insufficient there) for the same underlying reason — real
+	// margin for genuinely nondeterministic platform behavior, not a
+	// guess padded indefinitely.
+	time.Sleep(750 * time.Millisecond)
 }
 
 // TestCacher_OpenCountTracksOnlyRefsPositive confirms openCount — the
