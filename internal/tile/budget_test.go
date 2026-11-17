@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"autoOr-simg/internal/native"
 	"autoOr-simg/internal/provider"
@@ -44,13 +45,26 @@ func TestBuildMipmap_OverBudgetSkipsRealBuild(t *testing.T) {
 	var over atomic.Bool
 	over.Store(true)
 
+	// Real, bounded fetchPool — the second BuildMipmap call below (once
+	// budget clears) does a genuine 256-chunk fetch, same unbounded-
+	// goroutine-burst shape that made other tests in this package flake
+	// on real windows-latest CI: TempDir's cleanup (registered by
+	// t.TempDir() itself, runs when this test function returns) could
+	// race the tail end of those chunk-fetch goroutines' disk writes
+	// before they'd finished, which Windows' slower async file-close
+	// semantics made worse than on Linux. See bc1cache_test.go's
+	// TestBuildMipmap_PersistsBC1CacheOnCleanBuild for the full finding.
+	pool := NewFetchPool(defaultFetchThreads)
+	t.Cleanup(pool.Close)
+
 	tl := &Tile{
 		Row: 0, Col: 0, Zoom: 10,
 		Maptype:    "TEST",
 		MinZoom:    10,
 		CacheDir:   t.TempDir(),
 		Provider:   testProvider,
-		Client:     &http.Client{},
+		fetchPool:  pool,
+		Client:     newTileHTTPClient(defaultFetchThreads),
 		MaxWait:    defaultMaxWait,
 		DDS:        NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		log:        noopLogger{},
@@ -90,6 +104,19 @@ func TestBuildMipmap_OverBudgetSkipsRealBuild(t *testing.T) {
 	if tl.BudgetDegradedCount() != 1 {
 		t.Errorf("BudgetDegradedCount() = %d after a successful real build, want unchanged at 1", tl.BudgetDegradedCount())
 	}
+
+	// BuildMipmap's fetchGrid loop (tile.go) already blocks until every
+	// chunk's fetchOne goroutine has sent its result, and each one's disk
+	// write (chunk.Fetch) happens-before that send — so by the time
+	// BuildMipmap returns, every write has genuinely completed, not just
+	// been started. This sleep is for what happens after that: on a real
+	// windows-latest CI run, TempDir's own cleanup (registered by
+	// t.TempDir() above) still hit "directory not empty" even though every
+	// write had finished, because Windows' file-close/directory-entry
+	// settling isn't synchronous with the close() syscall returning the
+	// way POSIX unlink is — a handle or AV scan can still be settling
+	// briefly after. Real margin for that, not a timeout fight.
+	time.Sleep(100 * time.Millisecond)
 }
 
 // TestCacher_OpenCountTracksOnlyRefsPositive confirms openCount — the

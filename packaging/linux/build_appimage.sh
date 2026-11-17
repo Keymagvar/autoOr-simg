@@ -34,13 +34,15 @@ cp "$STAGE_DIR/lib/linux/libispc_texcomp.so" "$APPDIR/usr/lib/linux/"
 
 # Not $STAGE_DIR/autoOr-simg.png (that's internal/webui/web/logo.png, a
 # 508x676 non-square marketing/mascot image) — linuxdeploy's icon
-# deployment step requires an exact standard square resolution (256x256
-# here) and rejects anything else outright, so a non-square source fails
-# the whole build. internal/tray/icon.png is the real small square app
-# icon (60x60) already used as the upscale source for the macOS .icns
-# (packaging/macos/build.sh) — same approach here, just via ImageMagick
-# instead of sips since this runs on Linux.
-convert "$REPO_ROOT/internal/tray/icon.png" -resize 256x256 "$APPDIR/autoOr-simg.png"
+# deployment step requires an exact standard square resolution and
+# rejects anything else outright, so a non-square source fails the whole
+# build. This is a pre-generated 256x256 upscale of internal/tray/icon.png
+# (the same square master used for the macOS .icns, packaging/macos/
+# build.sh) committed as a static asset rather than generated at build
+# time via ImageMagick's `convert` — ubuntu-latest doesn't actually ship
+# it (confirmed: a real CI run failed with "convert: command not found"),
+# and a static asset is one less tool this script needs to assume exists.
+cp "$SCRIPT_DIR/assets/autoOr-simg-256.png" "$APPDIR/autoOr-simg.png"
 
 # The tray feature (internal/tray) cgo-links GTK3 + libappindicator/
 # libayatana-appindicator at build time, which pulls in ~60 transitive

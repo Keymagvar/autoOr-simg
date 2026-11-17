@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -161,7 +160,7 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 
 	// Blocked while `blocked` is true, guaranteeing every chunk times out
 	// with nothing to fall back on (fresh cache dir, nothing else cached
-	// at any zoom) — then serves real data once unblocked. inFlight tracks
+	// at any zoom) — then serves real data once unblocked. served counts
 	// every handler invocation so the test can deterministically wait for
 	// all 256 chunk requests to actually finish (server-side) before
 	// returning — without a background repair goroutine to poll for
@@ -169,20 +168,45 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 	// the in-flight chunk-fetch goroutines (never cancelled by MaxWait —
 	// see fetchComposite's doc comment) a chance to finish their disk
 	// writes before t.TempDir()'s cleanup runs and races them.
+	//
+	// A target-count poll (below), not a sync.WaitGroup: fetchGrid
+	// (tile.go) launches all 256 chunk fetches as unbounded `go
+	// fetchOne(...)` goroutines with nothing synchronizing their actual
+	// start, so there's no guarantee the Go scheduler has run every one
+	// of them — let alone had it reach Add(1) — before this test moves
+	// past a WaitGroup.Wait() call. `go test -race` caught this directly:
+	// a goroutine that hadn't started yet called Add(1) after Wait() had
+	// already returned, a genuine "WaitGroup reused before Wait returned"
+	// panic. Polling for the real target (totalChunks) instead has no
+	// such race — it simply keeps waiting, for however long it actually
+	// takes, until every one of the 256 has genuinely been counted.
+	const totalChunks = GridSize * GridSize
 	var blocked atomic.Bool
 	blocked.Store(true)
-	var inFlight sync.WaitGroup
+	var served atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		inFlight.Add(1)
-		defer inFlight.Done()
 		for blocked.Load() {
 			time.Sleep(5 * time.Millisecond)
 		}
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.Write(jpegData)
+		served.Add(1)
 	}))
 	defer srv.Close()
 
+	// Deliberately NOT a bounded fetchPool here, unlike the other tests in
+	// this file: this test's whole design (see inFlight's comment above)
+	// depends on every one of the 256 chunk requests actually reaching
+	// the server essentially at once, so that inFlight.Wait() below —
+	// which only accounts for requests that have already reached the
+	// handler — genuinely captures all of them. A bounded fetchPool
+	// (tried here first) broke that: most of the 256 jobs would still be
+	// queued, not yet dispatched, when inFlight.Wait() returned, so a
+	// late-dispatched job's HTTP request could still race this test's own
+	// teardown (t.Cleanup(pool.Close), defer srv.Close()) afterward —
+	// confirmed as a real data race under `go test -race`, not a
+	// hypothetical. This test's Client is still tuned (not a bare
+	// &http.Client{}) since that part was never the problem.
 	cacheDir := t.TempDir()
 	tl := &Tile{
 		Row: 0, Col: 0, Zoom: 10,
@@ -190,10 +214,17 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 		MinZoom:  10,
 		CacheDir: cacheDir,
 		Provider: testProviderFor(srv.URL),
-		Client:   newTileHTTPClient(GridSize * GridSize), // see TestBuildMipmap_PersistsBC1CacheOnCleanBuild's Client comment
-		MaxWait:  30 * time.Millisecond,
-		DDS:      NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
-		log:      noopLogger{},
+		Client:   newTileHTTPClient(GridSize * GridSize),
+		// The server stays blocked (gated by `blocked`, independent of
+		// MaxWait) for this whole call, so BuildMipmap always times out
+		// and reports degraded regardless of MaxWait's value — the 256
+		// fetchOne goroutines fetchGrid (tile.go) launches keep running in
+		// the background afterward either way, and the target-count poll
+		// below (not MaxWait) is what makes waiting for all of them
+		// actually safe.
+		MaxWait: 30 * time.Millisecond,
+		DDS:     NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
+		log:     noopLogger{},
 	}
 
 	tl.BuildMipmap(context.Background(), 0)
@@ -203,17 +234,30 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 	}
 
 	blocked.Store(false)
-	inFlight.Wait() // every handler has now written its response
-	// inFlight.Wait() only confirms the server finished writing each
-	// response — each client goroutine still has to read the body and
-	// save_cache() to disk afterward. A short settle window for that
-	// client-side tail so TempDir's cleanup doesn't race those last
-	// writes — widened from 50ms after a real windows-latest CI run hit
-	// "directory not empty" at cleanup: Windows' own file-close/delete
-	// semantics are more asynchronous than POSIX unlink (a real, known
-	// platform difference, not just this test running slower), so a
-	// handle can still be settling even after the write syscall returns.
-	time.Sleep(250 * time.Millisecond)
+
+	// Poll for the real target instead of a WaitGroup: see served's own
+	// comment above for why a WaitGroup here is an actual race, not just
+	// a style preference. deadline is a correctness backstop for a
+	// genuine regression elsewhere (e.g. a chunk fetch erroring out
+	// before reaching the handler) — not the mechanism this loop relies
+	// on; it should never come close to firing in the normal case.
+	deadline := time.Now().Add(10 * time.Second)
+	for served.Load() < totalChunks {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d/%d chunk requests were ever served after unblocking — a real regression, not a timing fluke", served.Load(), totalChunks)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// served.Load() == totalChunks only confirms the server finished
+	// writing each response — each client goroutine still has to read the
+	// body and save_cache() to disk afterward, and then Windows itself
+	// has to finish settling that close before the directory genuinely
+	// looks empty (file-close/directory-entry semantics more asynchronous
+	// than POSIX unlink — a real, known platform difference). No
+	// deterministic signal to wait on for that part, so this remaining
+	// sleep is an honest margin for genuinely nondeterministic platform
+	// behavior, not a guess padded indefinitely.
+	time.Sleep(750 * time.Millisecond)
 }
 
 // TestBuildMipmap_DoesNotPersistBuildWithConfirmedEmptyChunk is the most

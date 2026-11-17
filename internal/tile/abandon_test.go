@@ -42,8 +42,16 @@ func TestAbandonedFetchSkipsDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const slowDelay = 300 * time.Millisecond
-	const maxWait = 60 * time.Millisecond // must be well under slowDelay
+	const slowDelay = 1 * time.Second
+	const maxWait = 200 * time.Millisecond // must be well under slowDelay
+	// Widened from 60ms/300ms: this test only has 2 chunks total (not the
+	// 256-way burst the fetchPool/connection-pooling fixes elsewhere in
+	// this package address), so it was never a concurrency bottleneck —
+	// a real windows-latest CI run still failed here because 60ms isn't
+	// enough margin for one real HTTP round-trip + JPEG decode on a
+	// loaded CI VM. The actual invariant under test (fast chunk decodes
+	// before maxWait, slow chunk doesn't) doesn't care about the absolute
+	// values, just that maxWait stays comfortably under slowDelay.
 
 	var slowReqSeen sync.WaitGroup
 	slowReqSeen.Add(1)
