@@ -36,7 +36,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: sudo apt-get update && sudo apt-get install -y libayatana-appindicator3-dev
+      # See test.yml's test-linux job for why libfuse-dev (not just
+      # libfuse3-dev) and libturbojpeg0-dev are both needed at build time.
+      - run: sudo apt-get update && sudo apt-get install -y libfuse-dev libfuse3-dev libturbojpeg0-dev libayatana-appindicator3-dev
       - name: Build
         run: VERSION="${{ github.ref_name }}" bash packaging/linux/build.sh
       - uses: actions/upload-artifact@v4

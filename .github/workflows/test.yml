@@ -12,7 +12,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: sudo apt-get update && sudo apt-get install -y libfuse3-dev libayatana-appindicator3-dev
+      # libfuse-dev (not libfuse3-dev): cgofuse (internal/fuse) builds
+      # against the classic FUSE2 header path (-I/usr/include/fuse) by
+      # default — nothing in this repo passes the "fuse3" build tag that
+      # would switch it to /usr/include/fuse3/fuse.h instead. libfuse3-dev
+      # is still genuinely needed at *runtime* (fusermount3, documented in
+      # packaging/linux/README.txt for end users) — this is purely a
+      # build-time header mismatch, both packages coexist fine.
+      # libturbojpeg0-dev: turbojpeg.h for internal/native/jpeg_turbo.go
+      # (the .a itself is vendored under testdata/lib/linux, just not the
+      # header).
+      - run: sudo apt-get update && sudo apt-get install -y libfuse-dev libfuse3-dev libturbojpeg0-dev libayatana-appindicator3-dev
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
