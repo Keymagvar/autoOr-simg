@@ -195,34 +195,43 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Deliberately NOT a bounded fetchPool here, unlike the other tests in
-	// this file: this test's whole design (see inFlight's comment above)
-	// depends on every one of the 256 chunk requests actually reaching
-	// the server essentially at once, so that inFlight.Wait() below —
-	// which only accounts for requests that have already reached the
-	// handler — genuinely captures all of them. A bounded fetchPool
-	// (tried here first) broke that: most of the 256 jobs would still be
-	// queued, not yet dispatched, when inFlight.Wait() returned, so a
-	// late-dispatched job's HTTP request could still race this test's own
-	// teardown (t.Cleanup(pool.Close), defer srv.Close()) afterward —
-	// confirmed as a real data race under `go test -race`, not a
-	// hypothetical. This test's Client is still tuned (not a bare
-	// &http.Client{}) since that part was never the problem.
+	// Bounded fetchPool — the real root cause, found via the log line
+	// enabled below: a real windows-latest CI run showed "connectex: ...
+	// actively refused it" for dozens of the 256 chunks. That's not
+	// slowness, it's Windows' TCP listen backlog (much smaller by default
+	// than Linux's) overflowing when 256 raw connections hit this single
+	// local listener at once — excess SYNs get refused outright, not
+	// queued, so no amount of waiting ever recovers them (confirmed: the
+	// served count plateaus below 256 permanently, it doesn't climb
+	// slowly). A bounded pool keeps concurrent connection attempts at
+	// defaultFetchThreads (32) instead of all 256 at once, well within
+	// any reasonable backlog — matching what production always does
+	// anyway (Cacher never lets a Tile bypass fetchPool). An earlier
+	// attempt at this same bounded pool was reverted because it broke a
+	// since-replaced sync.WaitGroup-based wait below (queued-but-
+	// not-yet-dispatched jobs raced that WaitGroup's own Wait() call) —
+	// the target-count poll that replaced it has no such race regardless
+	// of how the 256 jobs get dispatched, so it's safe to combine with
+	// bounding now.
+	pool := NewFetchPool(defaultFetchThreads)
+	t.Cleanup(pool.Close)
+
 	cacheDir := t.TempDir()
 	tl := &Tile{
 		Row: 0, Col: 0, Zoom: 10,
-		Maptype:  "TEST",
-		MinZoom:  10,
-		CacheDir: cacheDir,
-		Provider: testProviderFor(srv.URL),
-		Client:   newTileHTTPClient(GridSize * GridSize),
+		Maptype:   "TEST",
+		MinZoom:   10,
+		CacheDir:  cacheDir,
+		Provider:  testProviderFor(srv.URL),
+		fetchPool: pool,
+		Client:    newTileHTTPClient(defaultFetchThreads),
 		// The server stays blocked (gated by `blocked`, independent of
 		// MaxWait) for this whole call, so BuildMipmap always times out
-		// and reports degraded regardless of MaxWait's value — the 256
-		// fetchOne goroutines fetchGrid (tile.go) launches keep running in
-		// the background afterward either way, and the target-count poll
-		// below (not MaxWait) is what makes waiting for all of them
-		// actually safe.
+		// and reports degraded regardless of MaxWait's value — the chunk
+		// fetches fetchGrid (tile.go) dispatches through fetchPool above
+		// keep running in the background afterward either way, and the
+		// target-count poll below (not MaxWait) is what makes waiting for
+		// all of them actually safe.
 		MaxWait: 30 * time.Millisecond,
 		DDS:     NewDDS(GridSize*256, GridSize*256, native.DefaultDecoder(), native.DefaultCompressor()),
 		// Not noopLogger: a real windows-latest CI run hit this test's own
@@ -246,17 +255,16 @@ func TestBuildMipmap_DoesNotPersistDegradedBuild(t *testing.T) {
 
 	// Poll for the real target instead of a WaitGroup: see served's own
 	// comment above for why a WaitGroup here is an actual race, not just
-	// a style preference. deadline is a correctness backstop, widened
-	// from 10s after a real windows-latest CI run hit it with only
-	// 202/256 served — genuinely unclear yet whether that run needed more
-	// real wall-clock time for 256 unbounded goroutines on a
-	// resource-constrained CI VM (plausible — nothing here is normally
-	// this concurrency-heavy in production, which always goes through a
-	// bounded fetchPool) or something was actually dropping requests; the
-	// log line above will say which if this fires again. 45s is well
-	// past perRequestTimeout's own 30s per-chunk bound (chunk.go), so a
-	// chunk that's going to fail outright will have definitely failed by
-	// then, not just be cut off mid-flight by this test's own impatience.
+	// a style preference. deadline is a correctness backstop — the actual
+	// fix for what used to trip it (202/256, then 246/256 served) is the
+	// bounded fetchPool above; the real logger it took to find that
+	// ("connectex: ... actively refused it" — Windows' TCP listen backlog
+	// overflowing under 256 simultaneous raw connections, not slowness)
+	// confirmed those requests were refused outright, not just slow, so
+	// no deadline could ever have fixed it by itself. 45s stays as margin
+	// for genuine CI slowness, well past perRequestTimeout's own 30s
+	// per-chunk bound (chunk.go) so a chunk that's going to fail outright
+	// has had time to actually do so.
 	deadline := time.Now().Add(45 * time.Second)
 	for served.Load() < totalChunks {
 		if time.Now().After(deadline) {
