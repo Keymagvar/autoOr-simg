@@ -22,7 +22,13 @@ jobs:
       # libturbojpeg0-dev: turbojpeg.h for internal/native/jpeg_turbo.go
       # (the .a itself is vendored under testdata/lib/linux, just not the
       # header).
-      - run: sudo apt-get update && sudo apt-get install -y libfuse-dev libfuse3-dev libturbojpeg0-dev libayatana-appindicator3-dev
+      # libgtk-3-bin/librsvg2-common: not needed to build autoOr-simg itself,
+      # but linuxdeploy's GTK plugin (packaging/linux/build_appimage.sh)
+      # shells out to gtk-update-icon-cache and needs librsvg available to
+      # bundle SVG-backed GTK assets into the AppImage correctly — without
+      # them the bundle can come out subtly incomplete instead of a loud
+      # build failure, which is worse.
+      - run: sudo apt-get update && sudo apt-get install -y libfuse-dev libfuse3-dev libturbojpeg0-dev libayatana-appindicator3-dev libgtk-3-bin librsvg2-common
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...

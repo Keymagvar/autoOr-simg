@@ -42,7 +42,9 @@ jobs:
           go-version-file: go.mod
       # See test.yml's test-linux job for why libfuse-dev (not just
       # libfuse3-dev) and libturbojpeg0-dev are both needed at build time.
-      - run: sudo apt-get update && sudo apt-get install -y libfuse-dev libfuse3-dev libturbojpeg0-dev libayatana-appindicator3-dev
+      # See test.yml's test-linux job for why libgtk-3-bin/librsvg2-common
+      # are needed (linuxdeploy's GTK plugin, used by build_appimage.sh).
+      - run: sudo apt-get update && sudo apt-get install -y libfuse-dev libfuse3-dev libturbojpeg0-dev libayatana-appindicator3-dev libgtk-3-bin librsvg2-common
       - name: Build
         run: VERSION="${{ github.ref_name }}" bash packaging/linux/build.sh
       - uses: actions/upload-artifact@v4
