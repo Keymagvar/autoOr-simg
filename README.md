@@ -118,11 +118,17 @@ Or just run it directly without installing: `autoOr-simg.exe run`.
 
 ### macOS
 
-Unzip `autoOr-simg-macos-<arch>.zip` and drag `autoOr-simg.app` to
-`/Applications` (or just double-click it from wherever you extracted it).
-Needs [macFUSE](https://macfuse.github.io) installed once. This build
-isn't notarized yet, so the first launch needs right-click → Open instead
-of a plain double-click, or:
+Not currently published as a release download — build it yourself:
+
+```bash
+VERSION=local bash packaging/macos/build.sh
+```
+
+Drag the resulting `autoOr-simg.app` (under `dist/`) to `/Applications`
+(or just double-click it from wherever it was built). Needs
+[macFUSE](https://macfuse.github.io) installed once. This build isn't
+notarized, so the first launch needs right-click → Open instead of a
+plain double-click, or:
 
 ```bash
 xattr -dr com.apple.quarantine autoOr-simg.app
@@ -164,10 +170,11 @@ does and why its default is what it is.
 Functional and flyable, actively developed. Linux is the best-tested
 platform, with CI running the real binary (FUSE mount included) on every
 push. Windows cross-compiles and is also run for real in CI against an
-actual WinFsp install. macOS builds and runs in CI, but a real scenery
-mount there hasn't been verified yet — macFUSE needs a one-time
-interactive security approval CI can't automate. Not affiliated with or
-endorsed by the original AutoOrtho project.
+actual WinFsp install. macOS is not currently covered by CI (see
+`packaging/macos/build.sh` if you want to build it yourself); a real
+scenery mount there hasn't been verified either way — macFUSE needs a
+one-time interactive security approval CI can't automate. Not affiliated
+with or endorsed by the original AutoOrtho project.
 
 ## Development
 
@@ -177,9 +184,9 @@ go vet ./...
 go test ./...
 ```
 
-`.github/workflows/test.yml` runs the same checks on Linux, Windows, and
-macOS on every push, plus a real end-to-end run (web UI + FUSE mount,
-Linux via the actual AppImage) on Linux and Windows.
+`.github/workflows/test.yml` runs the same checks on Linux and Windows on
+every push, plus a real end-to-end run (web UI + FUSE mount, Linux via
+the actual AppImage) on both.
 
 ## Credits & license
 

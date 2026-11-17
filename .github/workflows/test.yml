@@ -27,7 +27,7 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: Build the AppImage via the real release packaging script
-        # Same reasoning as the Windows/macOS jobs below: runs the actual
+        # Same reasoning as the Windows job below: runs the actual
         # packaging/linux/build_appimage.sh, not a hand-rolled
         # re-implementation, so a broken AppDir/AppRun/icon change is
         # caught here on every push instead of only at release time.
@@ -39,7 +39,7 @@ jobs:
 
           # Isolated $HOME so this doesn't touch anything real, and so the
           # fake X-Plane/scenery layout below is the only thing config.Load
-          # can find — same trick the Windows/macOS jobs use via a fresh
+          # can find — same trick the Windows job uses via a fresh
           # user profile.
           export HOME="$RUNNER_TEMP/appimage_home"
           mkdir -p "$HOME/xplane/Custom Scenery"
@@ -189,83 +189,3 @@ jobs:
             exit 1
           }
           Stop-Process -Id $proc.Id -Force
-
-  test-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test ./...
-      - name: Build via the real release packaging script (produces autoOr-simg.app)
-        # Same reasoning as the Windows job: runs the actual
-        # packaging/macos/build.sh, icns/Info.plist/launcher-wrapper
-        # bundling included, so a broken change to that script is caught
-        # here on every push instead of only discovered at release time
-        # (or worse, by a user on a tagged release).
-        run: VERSION=test-ci bash packaging/macos/build.sh
-      - name: Verify the .app bundle looks right
-        run: |
-          # build.sh nests the .app one level down, inside its own
-          # arch-named stage dir — find it instead of hardcoding that path.
-          APP=$(find dist -maxdepth 2 -name "*.app" -print -quit)
-          test -n "$APP" || { echo "no .app bundle produced"; exit 1; }
-          test -f "$APP/Contents/Info.plist" || { echo "missing Info.plist"; exit 1; }
-          test -f "$APP/Contents/Resources/AppIcon.icns" || { echo "missing AppIcon.icns"; exit 1; }
-          test -x "$APP/Contents/MacOS/autoOr-simg-launcher" || { echo "missing launcher"; exit 1; }
-          test -x "$APP/Contents/MacOS/autoOr-simg" || { echo "missing real binary"; exit 1; }
-          echo "APP_PATH=$APP" >> "$GITHUB_ENV"
-      - name: Fake a minimal X-Plane + scenery layout (no real X-Plane needed)
-        run: |
-          mkdir -p "$RUNNER_TEMP/xplane/Custom Scenery"
-          mkdir -p "$RUNNER_TEMP/scenery/z_autoortho/scenery/z_ao_test"
-          cat > "$HOME/.autoortho" <<EOF
-          [general]
-          gui = false
-          showconfig = false
-          debug = false
-          auto_open_ui = false
-          enable_tray = false
-
-          [paths]
-          xplane_path = $RUNNER_TEMP/xplane
-          scenery_path = $RUNNER_TEMP/scenery
-          EOF
-      - name: Run the .app's launcher for real on actual macOS
-        # Can't assume the FUSE mount itself comes up here the way the
-        # Windows job proves WinFsp: macFUSE's kernel/system extension
-        # needs a one-time interactive security approval that no CI
-        # script can click through (Apple deliberately blocks silently
-        # approving this), so most macos-latest runners won't have a FUSE
-        # driver at all. Handle both possible outcomes honestly instead
-        # of assuming which one this runner gives: if it's actually
-        # running after a few seconds, verify the web UI for real, same
-        # as the other two platforms; if it already exited, it must have
-        # failed at the real mount attempt specifically (proving cgo and
-        # the rest of the binary are sound on real macOS) and not from
-        # something unrelated.
-        run: |
-          "./$APP_PATH/Contents/MacOS/autoOr-simg-launcher" -H > out.log 2> err.log &
-          pid=$!
-          sleep 5
-          echo "---- stdout so far ----"; cat out.log || true
-          echo "---- stderr so far ----"; cat err.log || true
-          if kill -0 "$pid" 2>/dev/null; then
-            echo "still running after 5s — a FUSE driver must be present; verifying the web UI for real"
-            if ! curl -fsS -o /dev/null "http://127.0.0.1:5000/"; then
-              echo "process is running but the web UI never answered" >&2
-              kill "$pid" 2>/dev/null || true
-              exit 1
-            fi
-            kill "$pid" 2>/dev/null
-          else
-            wait "$pid"; code=$?
-            echo "exited with code $code (expected: no macFUSE on this runner)"
-            if ! grep -qi "mounting scenery" out.log err.log 2>/dev/null; then
-              echo "process failed, but not where expected (mounting scenery) — real breakage, not just 'no macFUSE here'" >&2
-              exit 1
-            fi
-          fi
